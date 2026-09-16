@@ -58,10 +58,6 @@ export class OpcUaAdapter extends BaseProtocolAdapter {
   }
 
   async disconnect(): Promise<void> {
-    if (this.client?.disconnect) {
-      await this.client.disconnect()
-      this.client = undefined
-    }
     this.markDisconnected()
   }
 
