@@ -17,6 +17,7 @@ import { useProjectStore } from '../store/projectStore.ts'
 import { DeviceType, SimulationStatus } from '../types/index.ts'
 import type { DeviceType as DeviceTypeName } from '../types/index.ts'
 import { useSimulationStore } from '../store/simulationStore.ts'
+import { useDigitalTwinStore } from '../store/digitalTwinStore.ts'
 
 const nodeTypes = {
   device: DeviceNode,
@@ -151,6 +152,7 @@ function CanvasInner() {
         if (selectedNodes[0]) {
           setSelection(selectedNodes[0].id, 'device')
           setSelectedLogEntity(selectedNodes[0].id)
+          useDigitalTwinStore.getState().selectDevice(selectedNodes[0].id)
           return
         }
         if (selectedEdges[0]) {
@@ -158,6 +160,7 @@ function CanvasInner() {
           return
         }
         setSelection(null, null)
+        useDigitalTwinStore.getState().selectDevice(undefined)
       }}
       onNodeDragStop={(_event, _node, currentNodes) => {
         useProjectStore.getState().commitNodePositions(currentNodes)

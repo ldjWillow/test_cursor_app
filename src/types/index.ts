@@ -61,7 +61,7 @@ export const SimulationSpeed = {
 
 export type SimulationSpeed = (typeof SimulationSpeed)[keyof typeof SimulationSpeed]
 
-export const SCHEMA_VERSION = '0.2' as const
+export const SCHEMA_VERSION = '0.3' as const
 
 export interface SourceParams {
   generationInterval: number
@@ -317,6 +317,14 @@ export interface ProjectDocument {
   simulationConfig: SimulationConfig
   scenarios?: ScenarioDefinition[]
   experiment?: ExperimentDefinition
+  assets?: {
+    agvModel?: string
+    rackModel?: string
+    stackerModel?: string
+    conveyorModel?: string
+    [key: string]: string | undefined
+  }
+  signalMappings?: Array<{ id: string; source: string; target: string; description?: string }>
 }
 
 export interface AgvComparisonRow {

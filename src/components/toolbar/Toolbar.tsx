@@ -3,6 +3,7 @@ import type { MenuProps } from 'antd'
 import { SimulationSpeed, SimulationStatus } from '../../types/index.ts'
 import { useProjectStore } from '../../store/projectStore.ts'
 import { useSimulationStore } from '../../store/simulationStore.ts'
+import { useDigitalTwinStore } from '../../store/digitalTwinStore.ts'
 import { simulationRuntime } from '../../simulation/SimulationRuntime.ts'
 import { exportProject, importProject, loadProject, saveProject } from '../../persistence/projectPersistence.ts'
 import {
@@ -12,9 +13,12 @@ import {
   emptyProject,
   standardWarehouseScenario,
 } from '../../domain/base/scenarios.ts'
+import { automatedWarehouseDemo } from '../../domain/base/demoScenes.ts'
 import { compareAgvCounts, runAgvExperiment } from '../../simulation/experiments.ts'
 import { experimentManager } from '../../experiment/ExperimentManager.ts'
 import { modelValidator } from '../../validation/ModelValidator.ts'
+import { deviceRegistry } from '../../virtual/DeviceRegistry.ts'
+import { replayEngine } from '../../replay/ReplayEngine.ts'
 
 const SPEEDS: SimulationSpeed[] = [1, 5, 10, 50]
 
@@ -43,13 +47,19 @@ export default function Toolbar() {
   const setComparison = useSimulationStore((state) => state.setComparison)
   const setExperiment = useSimulationStore((state) => state.setExperiment)
   const setError = useSimulationStore((state) => state.setError)
+  const viewMode = useDigitalTwinStore((state) => state.viewMode)
+  const setViewMode = useDigitalTwinStore((state) => state.setViewMode)
+  const operatingMode = useDigitalTwinStore((state) => state.operatingMode)
+  const setOperatingMode = useDigitalTwinStore((state) => state.setOperatingMode)
+  const snapshot = useSimulationStore((state) => state.snapshot)
 
   const scenarioItems: MenuProps['items'] = [
     { key: 'empty', label: 'Empty project' },
-    { key: 'conveyor', label: 'Source → Conveyor → Sink' },
-    { key: 'agv', label: 'AGV A → N1 → N2 → B' },
-    { key: 'asrs', label: 'Rack + Stacker inbound' },
-    { key: 'standard', label: 'Standard warehouse (V0.2)' },
+    { key: 'conveyor', label: 'Template: Conveyor Warehouse' },
+    { key: 'agv', label: 'Template: AGV Warehouse' },
+    { key: 'asrs', label: 'Template: ASRS Warehouse' },
+    { key: 'demo', label: 'Template: AGV + ASRS Demo' },
+    { key: 'standard', label: 'Standard warehouse (analysis)' },
   ]
 
   return (
@@ -70,14 +80,51 @@ export default function Toolbar() {
               if (key === 'conveyor') setDocument(conveyorScenario())
               if (key === 'agv') setDocument(agvScenario(3, 100))
               if (key === 'asrs') setDocument(asrsScenario())
+              if (key === 'demo') setDocument(automatedWarehouseDemo(200))
               if (key === 'standard') setDocument(standardWarehouseScenario(4, 200))
               if (key === 'empty') setDocument(emptyProject('WarehouseSim'))
-              simulationRuntime.reset(useProjectStore.getState().document, useProjectStore.getState().revision)
+              const next = useProjectStore.getState().document
+              deviceRegistry.loadFromProject(next)
+              simulationRuntime.reset(next, useProjectStore.getState().revision)
             },
           }}
         >
           <Button size="small">New</Button>
         </Dropdown>
+        <Button size="small" type={viewMode === '2d' ? 'primary' : 'default'} onClick={() => setViewMode('2d')}>
+          2D
+        </Button>
+        <Button size="small" type={viewMode === '3d' ? 'primary' : 'default'} onClick={() => setViewMode('3d')}>
+          3D
+        </Button>
+        <Button size="small" type={viewMode === 'split' ? 'primary' : 'default'} onClick={() => setViewMode('split')}>
+          Split
+        </Button>
+        <Button
+          size="small"
+          type={operatingMode === 'simulation' ? 'primary' : 'default'}
+          onClick={() => setOperatingMode('simulation')}
+        >
+          Sim Mode
+        </Button>
+        <Button
+          size="small"
+          type={operatingMode === 'emulation' ? 'primary' : 'default'}
+          onClick={() => setOperatingMode('emulation')}
+        >
+          Emulation
+        </Button>
+        <Button
+          size="small"
+          type={operatingMode === 'replay' ? 'primary' : 'default'}
+          onClick={() => {
+            setOperatingMode('replay')
+            replayEngine.load(snapshot.eventLog)
+            replayEngine.play(5)
+          }}
+        >
+          Replay
+        </Button>
         <Button size="small" onClick={() => saveProject(document)}>
           Save
         </Button>
@@ -87,6 +134,7 @@ export default function Toolbar() {
             const loaded = loadProject()
             if (loaded) {
               setDocument(loaded)
+              deviceRegistry.loadFromProject(loaded)
             } else {
               setError('No saved project in LocalStorage')
             }
@@ -109,7 +157,9 @@ export default function Toolbar() {
                 return
               }
               try {
-                setDocument(await importProject(file))
+                const imported = await importProject(file)
+                setDocument(imported)
+                deviceRegistry.loadFromProject(imported)
               } catch (error) {
                 setError(error instanceof Error ? error.message : 'Import failed')
               }
@@ -217,7 +267,8 @@ export default function Toolbar() {
         </Button>
       </Space>
       <Typography.Text className="toolbar-status" type="secondary">
-        v0.2 · {status === SimulationStatus.Idle ? 'IDLE' : status.toUpperCase()}
+        v0.3 · {viewMode.toUpperCase()} · {operatingMode.toUpperCase()} ·{' '}
+        {status === SimulationStatus.Idle ? 'IDLE' : status.toUpperCase()}
       </Typography.Text>
     </header>
   )

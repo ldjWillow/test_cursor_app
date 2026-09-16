@@ -2,6 +2,10 @@ import { Input, InputNumber } from 'antd'
 import { DeviceType } from '../../types/index.ts'
 import type { DeviceParams, PlacedDevice, ProjectEdge } from '../../types/index.ts'
 import { useProjectStore } from '../../store/projectStore.ts'
+import { useDigitalTwinStore } from '../../store/digitalTwinStore.ts'
+import { useSimulationStore } from '../../store/simulationStore.ts'
+import { round } from '../../utils/math.ts'
+import type { AgvRuntimeState } from '../../twin/types.ts'
 
 function NumberField({
   label,
@@ -142,8 +146,15 @@ export default function PropertyPanel() {
   const selectedId = useProjectStore((state) => state.selectedId)
   const selectedKind = useProjectStore((state) => state.selectedKind)
   const document = useProjectStore((state) => state.document)
+  const twinDevice = useDigitalTwinStore((state) =>
+    selectedId ? state.twin.devices[selectedId] : undefined,
+  )
+  const timeline = useSimulationStore((state) =>
+    state.snapshot.devices.find((item) => item.id === selectedId)?.timeline ?? [],
+  )
   const device = document.devices.find((item) => item.id === selectedId)
   const edge = document.edges.find((item) => item.id === selectedId)
+  const agvTwin = twinDevice?.type === 'agv' ? (twinDevice as AgvRuntimeState) : undefined
 
   return (
     <aside className="panel property-panel">
@@ -164,6 +175,35 @@ export default function PropertyPanel() {
             Position: {device.x.toFixed(0)}, {device.y.toFixed(0)}
           </div>
           <ParamFields device={device} />
+          {agvTwin && (
+            <>
+              <div className="panel-title" style={{ marginTop: 10 }}>
+                Twin Runtime
+              </div>
+              <div className="prop-static">Status: {agvTwin.status}</div>
+              <div className="prop-static">Task: {agvTwin.currentTaskId ?? '-'}</div>
+              <div className="prop-static">Battery: {round(agvTwin.battery, 1)}</div>
+              <div className="prop-static">Speed: {agvTwin.speed} m/s</div>
+              <div className="prop-static">
+                World: {round(agvTwin.x, 2)}, {round(agvTwin.y, 2)} m
+              </div>
+              <div className="prop-static">Node: {agvTwin.nodeId ?? '-'}</div>
+              <div className="prop-static">Route Wait: {round(agvTwin.routeWaitingTime, 1)} s</div>
+              <div className="prop-static">Travel: {round(agvTwin.travelDistance, 1)} m</div>
+              <div className="prop-static">Loaded: {round(agvTwin.loadedTravelDistance, 1)} m</div>
+              <div className="prop-static">Empty: {round(agvTwin.emptyTravelDistance, 1)} m</div>
+              <div className="panel-title" style={{ marginTop: 8 }}>
+                Timeline
+              </div>
+              <div className="event-list log-scroll">
+                {timeline.slice(-12).map((segment, index) => (
+                  <div key={`${segment.status}-${segment.startTime}-${index}`}>
+                    {segment.startTime.toFixed(1)}-{segment.endTime.toFixed(1)} {segment.status}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
       {selectedKind === 'edge' && edge && <EdgeFields edge={edge} />}

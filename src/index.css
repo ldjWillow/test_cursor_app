@@ -30,8 +30,80 @@ body,
   height: 100%;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 280px;
-  grid-template-rows: 52px minmax(0, 1fr) 320px;
+  grid-template-rows: 52px minmax(0, 1fr) 280px 180px;
   background: var(--bg);
+}
+
+.viewport-area {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  background: #0c1118;
+}
+
+.view-2d .viewport-area {
+  grid-template-columns: 1fr;
+}
+
+.view-3d .viewport-area {
+  grid-template-columns: 1fr;
+}
+
+.view-split .viewport-area {
+  grid-template-columns: 1fr 1fr;
+}
+
+.viewport-2d,
+.viewport-3d {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  border-right: 1px solid var(--line);
+}
+
+.canvas3d-shell {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.camera-toolbar {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 2;
+}
+
+.camera-toolbar button {
+  background: #151c27;
+  color: var(--text);
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.twin3d-label {
+  background: rgba(15, 20, 28, 0.85);
+  color: #e8edf5;
+  font-size: 10px;
+  padding: 2px 6px;
+  border: 1px solid #2a3545;
+  white-space: nowrap;
+}
+
+.commissioning-panel {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  background: #101722;
+  padding: 8px 12px;
+  overflow: auto;
+}
+
+.vc-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1.1fr 1fr;
+  gap: 10px;
 }
 
 .toolbar {

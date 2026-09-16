@@ -30,7 +30,7 @@ function defaultTaskGenerator(config: SimulationConfig): TaskGeneratorConfig | u
 }
 
 /**
- * Migrate older project JSON (schema 0.1 / missing schemaVersion) to 0.2.
+ * Migrate older project JSON (0.1 / 0.2 / missing) to current schema.
  * Never throws away unrecognized fields.
  */
 export function migrateProject(raw: unknown): ProjectDocument {
@@ -55,12 +55,15 @@ export function migrateProject(raw: unknown): ProjectDocument {
     }),
   }
 
+  const versionBump =
+    schemaVersion === '0.1' ? 3 : schemaVersion === '0.2' ? Math.max(3, project.project?.version ?? 2) : project.project?.version ?? 3
+
   const migrated: ProjectDocument = {
     ...project,
     schemaVersion: SCHEMA_VERSION,
     project: {
       name: project.project?.name ?? 'Untitled warehouse',
-      version: Math.max(project.project?.version ?? 1, schemaVersion === '0.1' ? 2 : project.project?.version ?? 1),
+      version: versionBump,
     },
     devices: project.devices ?? [],
     nodes: project.nodes ?? [],
@@ -69,6 +72,13 @@ export function migrateProject(raw: unknown): ProjectDocument {
     simulationConfig,
     scenarios: project.scenarios,
     experiment: project.experiment,
+    assets: project.assets ?? {
+      agvModel: '',
+      rackModel: '',
+      stackerModel: '',
+      conveyorModel: '',
+    },
+    signalMappings: project.signalMappings ?? [],
   }
 
   return migrated
@@ -82,6 +92,12 @@ export function ensureSchemaVersion(document: ProjectDocument): ProjectDocument 
       simulationConfig: {
         ...document.simulationConfig,
         enableTraffic: document.simulationConfig.enableTraffic ?? true,
+      },
+      assets: document.assets ?? {
+        agvModel: '',
+        rackModel: '',
+        stackerModel: '',
+        conveyorModel: '',
       },
     }
   }

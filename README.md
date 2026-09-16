@@ -1,25 +1,41 @@
 # WarehouseSim
 
-Discrete-event warehouse simulation for layout design, AGV fleet experiments, and bottleneck analysis.
+Discrete-event warehouse simulation with digital twin visualization and virtual commissioning.
 
-## V0.2 — Experiment & Traffic
+## Versions
 
-- Scenario overrides + batch ExperimentManager (with replications)
-- Reservation-based TrafficManager (node/edge conflict + waiting)
-- TaskGenerator / DemandProfile + seeded RandomGenerator
-- Waiting-time breakdown, AGV KPIs, BottleneckAnalyzer
-- Experiment Results charts, Event Log, AGV Timeline
-- ModelValidator, Undo/Redo, Duplicate, device templates
+- **V0.2** — Experiment & Traffic (scenario sweeps, TrafficManager, KPI/bottlenecks)
+- **V0.3** — 3D Digital Twin & Virtual Commissioning
+
+## Architecture
+
+```text
+Project Model → Simulation Engine → Digital Twin State → 2D / 3D Renderers
+External WCS → Protocol Adapter → VirtualDevice FSM → Twin State
+```
+
+Three.js never owns business logic. Renderers only read `DigitalTwinState`.
 
 ## Scripts
 
 ```bash
-npm install
-npm run dev
+npm install --legacy-peer-deps
+npm run dev          # UI
+npm run gateway      # HTTP/WS on :8787
+npm run dev:all      # UI + gateway
 npm test
 npm run build
 ```
 
+## Emulation API (gateway)
+
+- `POST /api/devices/:id/commands`
+- `GET /api/devices/:id/status`
+- `POST /api/tasks`
+- `GET /api/simulation/status`
+- `POST /api/faults`
+- `WS /ws`
+
 ## Schema
 
-Projects use `schemaVersion: "0.2"`. Older JSON is migrated on import/load.
+Projects use `schemaVersion: "0.3"` with migration from 0.1/0.2.
