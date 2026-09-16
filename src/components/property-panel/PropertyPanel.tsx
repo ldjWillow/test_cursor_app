@@ -142,6 +142,8 @@ function EdgeFields({ edge }: { edge: ProjectEdge }) {
   )
 }
 
+const EMPTY_TIMELINE: never[] = []
+
 export default function PropertyPanel() {
   const selectedId = useProjectStore((state) => state.selectedId)
   const selectedKind = useProjectStore((state) => state.selectedKind)
@@ -149,8 +151,9 @@ export default function PropertyPanel() {
   const twinDevice = useDigitalTwinStore((state) =>
     selectedId ? state.twin.devices[selectedId] : undefined,
   )
-  const timeline = useSimulationStore((state) =>
-    state.snapshot.devices.find((item) => item.id === selectedId)?.timeline ?? [],
+  // Stable empty fallback — a fresh `[]` each select trips React 19 getSnapshot loops.
+  const timeline = useSimulationStore(
+    (state) => state.snapshot.devices.find((item) => item.id === selectedId)?.timeline ?? EMPTY_TIMELINE,
   )
   const device = document.devices.find((item) => item.id === selectedId)
   const edge = document.edges.find((item) => item.id === selectedId)

@@ -195,6 +195,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   setSelection: (id, kind = id ? 'device' : null) => {
+    const current = get()
+    if (current.selectedId === id && current.selectedKind === kind) {
+      return
+    }
     set({ selectedId: id, selectedKind: kind })
   },
 

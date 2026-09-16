@@ -26,9 +26,14 @@ export const useDigitalTwinStore = create<DigitalTwinStore>((set, get) => ({
       twin: { ...get().twin, operatingMode },
     }),
   setHighlightedDeviceId: (highlightedDeviceId) => set({ highlightedDeviceId }),
-  selectDevice: (id) =>
+  selectDevice: (id) => {
+    const current = get()
+    if (current.highlightedDeviceId === id && current.twin.selectedDeviceId === id) {
+      return
+    }
     set({
       highlightedDeviceId: id,
-      twin: { ...get().twin, selectedDeviceId: id },
-    }),
+      twin: { ...current.twin, selectedDeviceId: id },
+    })
+  },
 }))
