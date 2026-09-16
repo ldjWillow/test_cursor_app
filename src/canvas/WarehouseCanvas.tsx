@@ -14,7 +14,7 @@ import type { Connection, EdgeChange, NodeChange } from 'reactflow'
 import DeviceNode from './nodes/DeviceNode.tsx'
 import WaypointNode from './nodes/WaypointNode.tsx'
 import { useProjectStore } from '../store/projectStore.ts'
-import { DeviceType } from '../types/index.ts'
+import { DeviceType, SimulationStatus } from '../types/index.ts'
 import type { DeviceType as DeviceTypeName } from '../types/index.ts'
 import { useSimulationStore } from '../store/simulationStore.ts'
 
@@ -53,7 +53,15 @@ function CanvasInner() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      setNodes(applyNodeChanges(changes, useProjectStore.getState().nodes))
+      const status = useSimulationStore.getState().status
+      const nextChanges =
+        status === SimulationStatus.Idle
+          ? changes
+          : changes.filter((change) => change.type !== 'position')
+      if (nextChanges.length === 0) {
+        return
+      }
+      setNodes(applyNodeChanges(nextChanges, useProjectStore.getState().nodes))
     },
     [setNodes],
   )
