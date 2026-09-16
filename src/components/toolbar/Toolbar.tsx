@@ -1,5 +1,4 @@
-import { Button, Dropdown, Input, Space, Typography } from 'antd'
-import type { MenuProps } from 'antd'
+import { Button, Input, Space, Typography } from 'antd'
 import { SimulationSpeed, SimulationStatus } from '../../types/index.ts'
 import { useProjectStore } from '../../store/projectStore.ts'
 import { useSimulationStore } from '../../store/simulationStore.ts'
@@ -19,6 +18,15 @@ import { modelValidator } from '../../validation/ModelValidator.ts'
 
 const SPEEDS: SimulationSpeed[] = [1, 5, 10, 50]
 
+const SCENARIO_OPTIONS = [
+  { value: 'empty', label: 'Empty project' },
+  { value: 'conveyor', label: 'Source → Conveyor → Sink' },
+  { value: 'agv', label: 'AGV A → N1 → N2 → B' },
+  { value: 'asrs', label: 'Rack + Stacker inbound' },
+  { value: 'stacker-sink', label: 'Source → Stacker → Sink' },
+  { value: 'standard', label: 'Standard warehouse (V0.2)' },
+]
+
 function validateOrError(document: ReturnType<typeof useProjectStore.getState>['document']): boolean {
   const issues = modelValidator.validate(document)
   useSimulationStore.getState().setValidationErrors(issues.map((issue) => issue.message))
@@ -28,6 +36,17 @@ function validateOrError(document: ReturnType<typeof useProjectStore.getState>['
   }
   useSimulationStore.getState().setError(undefined)
   return true
+}
+
+function loadScenario(key: string): void {
+  const setDocument = useProjectStore.getState().setDocument
+  if (key === 'conveyor') setDocument(conveyorScenario())
+  if (key === 'agv') setDocument(agvScenario(3, 100))
+  if (key === 'asrs') setDocument(asrsScenario())
+  if (key === 'stacker-sink') setDocument(stackerSinkScenario())
+  if (key === 'standard') setDocument(standardWarehouseScenario(4, 200))
+  if (key === 'empty') setDocument(emptyProject('WarehouseSim'))
+  simulationRuntime.reset(useProjectStore.getState().document, useProjectStore.getState().revision)
 }
 
 export default function Toolbar() {
@@ -49,15 +68,6 @@ export default function Toolbar() {
   const editingLocked = status === SimulationStatus.Running
   const lockTitle = editingLocked ? '仿真运行中，请先 Pause 或 Reset' : undefined
 
-  const scenarioItems: MenuProps['items'] = [
-    { key: 'empty', label: 'Empty project' },
-    { key: 'conveyor', label: 'Source → Conveyor → Sink' },
-    { key: 'agv', label: 'AGV A → N1 → N2 → B' },
-    { key: 'asrs', label: 'Rack + Stacker inbound' },
-    { key: 'stacker-sink', label: 'Source → Stacker → Sink' },
-    { key: 'standard', label: 'Standard warehouse (V0.2)' },
-  ]
-
   return (
     <header className="toolbar">
       <div className="toolbar-brand">
@@ -71,25 +81,29 @@ export default function Toolbar() {
         />
       </div>
       <Space size={6} wrap>
-        <Dropdown
+        <select
+          aria-label="New scenario"
+          className="scenario-select"
           disabled={editingLocked}
-          menu={{
-            items: scenarioItems,
-            onClick: ({ key }) => {
-              if (key === 'conveyor') setDocument(conveyorScenario())
-              if (key === 'agv') setDocument(agvScenario(3, 100))
-              if (key === 'asrs') setDocument(asrsScenario())
-              if (key === 'stacker-sink') setDocument(stackerSinkScenario())
-              if (key === 'standard') setDocument(standardWarehouseScenario(4, 200))
-              if (key === 'empty') setDocument(emptyProject('WarehouseSim'))
-              simulationRuntime.reset(useProjectStore.getState().document, useProjectStore.getState().revision)
-            },
+          defaultValue=""
+          onChange={(event) => {
+            const key = event.target.value
+            if (!key) {
+              return
+            }
+            loadScenario(key)
+            event.target.value = ''
           }}
         >
-          <Button size="small" disabled={editingLocked} title={lockTitle}>
-            New
-          </Button>
-        </Dropdown>
+          <option value="" disabled>
+            New scenario…
+          </option>
+          {SCENARIO_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
         <Button size="small" onClick={() => saveProject(document)}>
           Save
         </Button>

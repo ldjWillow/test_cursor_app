@@ -47,9 +47,10 @@ export default function OffsetEdge({
       <path
         d={edgePath}
         fill="none"
+        strokeWidth={28}
         stroke="transparent"
-        strokeWidth={24}
         className="react-flow__edge-interaction"
+        style={{ pointerEvents: 'stroke' }}
       />
       {selected && (
         <EdgeLabelRenderer>

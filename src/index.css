@@ -51,6 +51,17 @@ body,
   min-width: 240px;
 }
 
+.scenario-select {
+  height: 24px;
+  min-width: 210px;
+  border: 1px solid var(--line);
+  background: #1b2431;
+  color: var(--text);
+  font-size: 12px;
+  border-radius: 4px;
+  padding: 0 6px;
+}
+
 .toolbar-brand span {
   font-weight: 600;
   letter-spacing: 0.08em;
