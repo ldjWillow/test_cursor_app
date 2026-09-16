@@ -8,7 +8,8 @@ export type ProtocolHandler = (message: ProtocolMessage) => void
 
 /**
  * Protocol adapters isolate transport from VirtualDevice logic.
- * V0.3 ships HTTP + WebSocket; MQTT / OPC UA / Modbus are reserved stubs.
+ * V0.4: unified interface lives in industrial/ProtocolAdapter.ts
+ * This gateway module keeps InMemory + stubs for backward compatibility.
  */
 export interface ProtocolAdapter {
   readonly name: string

@@ -1,3 +1,9 @@
+import type {
+  ConnectionConfig,
+  IndustrialSignalMapping,
+  IoMapping,
+} from '../industrial/types.ts'
+
 export const DeviceType = {
   Source: 'source',
   Sink: 'sink',
@@ -61,7 +67,7 @@ export const SimulationSpeed = {
 
 export type SimulationSpeed = (typeof SimulationSpeed)[keyof typeof SimulationSpeed]
 
-export const SCHEMA_VERSION = '0.3' as const
+export const SCHEMA_VERSION = '0.4' as const
 
 export interface SourceParams {
   generationInterval: number
@@ -325,6 +331,12 @@ export interface ProjectDocument {
     [key: string]: string | undefined
   }
   signalMappings?: Array<{ id: string; source: string; target: string; description?: string }>
+  /** V0.4 industrial connectivity persistence (connections, mappings, IO). */
+  industrial?: {
+    connections: ConnectionConfig[]
+    signalMappings: IndustrialSignalMapping[]
+    ioMappings: IoMapping[]
+  }
 }
 
 export interface AgvComparisonRow {

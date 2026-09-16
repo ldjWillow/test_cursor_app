@@ -9,14 +9,23 @@ import { signalMapper } from '../signal/SignalMapper.ts'
 import { InMemoryProtocolAdapter } from './ProtocolAdapter.ts'
 import type { DigitalTwinState } from '../twin/types.ts'
 import { emptyDigitalTwinState } from '../twin/types.ts'
+import { connectionManager } from '../industrial/ConnectionManager.ts'
+import { signalRegistry } from '../industrial/SignalRegistry.ts'
+import { protocolMonitor } from '../industrial/ProtocolMonitor.ts'
+import { signalTrace } from '../industrial/SignalTrace.ts'
+import { commandBus } from '../industrial/CommandBus.ts'
+import { controlAuthority } from '../industrial/ControlAuthority.ts'
+import { industrialRuntime } from '../industrial/IndustrialRuntime.ts'
+import { networkFaultInjector } from '../industrial/NetworkFaultInjector.ts'
+import { auditLog } from '../industrial/AuditLog.ts'
 
 export interface GatewayOptions {
   port?: number
 }
 
 /**
- * Lightweight HTTP + WebSocket gateway for Virtual Commissioning.
- * External WCS/ACS talk here; they never mutate the twin store directly.
+ * HTTP + WebSocket gateway for Virtual Commissioning & Industrial Connectivity (V0.4).
+ * External WCS/ACS/PLC talk here; they never mutate the twin store directly.
  */
 export function createGatewayApp() {
   const app = express()
@@ -40,7 +49,7 @@ export function createGatewayApp() {
   }
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, service: 'warehousesim-gateway', version: '0.3' })
+    res.json({ ok: true, service: 'warehousesim-gateway', version: '0.4' })
   })
 
   app.get('/api/devices', (_req, res) => {
@@ -57,15 +66,18 @@ export function createGatewayApp() {
   })
 
   app.post('/api/devices/:id/commands', async (req, res) => {
-    const response = await deviceRegistry.sendCommand({
+    const source = String(req.body?.source ?? 'EXTERNAL') as 'EXTERNAL' | 'INTERNAL' | 'MANUAL'
+    const response = await commandBus.dispatch({
       deviceId: req.params.id,
       commandType: String(req.body?.commandType ?? ''),
       parameters: req.body?.parameters,
       commandId: req.body?.commandId,
+      source,
     })
     const status = deviceRegistry.get(req.params.id)?.getStatus()
     if (status) {
       signalMapper.updateFromDeviceSignals(status.deviceId, status.signals, Date.now())
+      signalRegistry.syncDeviceSignals(status.deviceId, status.signals, 'HTTP')
     }
     broadcast('device.command', response)
     broadcast('device.status', status)
@@ -94,10 +106,12 @@ export function createGatewayApp() {
       res.status(400).json({ error: 'agvId required in emulation demo' })
       return
     }
-    const assign = await deviceRegistry.sendCommand({
+    controlAuthority.set(agvId, 'EXTERNAL', 'SAFE_STOP')
+    const assign = await commandBus.dispatch({
       deviceId: agvId,
       commandType: 'ASSIGN_TASK',
       parameters: { taskId, sourceId, targetId },
+      source: 'EXTERNAL',
     })
     twin = {
       ...twin,
@@ -126,7 +140,14 @@ export function createGatewayApp() {
       twin,
       commands: deviceRegistry.commandLog.slice(-50),
       faults: faultManager.listActive(),
-      signals: signalMapper.watchTable(),
+      signals: signalRegistry.list().slice(0, 200),
+      connections: connectionManager.list().map((c) => ({
+        id: c.config.id,
+        name: c.config.name,
+        type: c.config.type,
+        status: c.status,
+      })),
+      protocolLog: protocolMonitor.list(undefined, 50),
     })
   })
 
@@ -140,6 +161,7 @@ export function createGatewayApp() {
     simulationStatus = 'idle'
     faultManager.reset()
     signalMapper.reset()
+    industrialRuntime.reset()
     twin = emptyDigitalTwinState('emulation')
     broadcast('simulation.status', { status: simulationStatus })
     res.json({ status: simulationStatus })
@@ -151,16 +173,83 @@ export function createGatewayApp() {
     const event = faultManager.injectNow(deviceId, faultType, req.body?.message)
     const device = deviceRegistry.get(deviceId) as { injectFault?: () => void } | undefined
     device?.injectFault?.()
+    if (req.body?.connectionId) {
+      networkFaultInjector.configure(String(req.body.connectionId), {
+        delayMs: Number(req.body.delayMs ?? 0),
+        jitterMs: Number(req.body.jitterMs ?? 0),
+        packetLossPct: Number(req.body.packetLossPct ?? 0),
+        disconnect: Boolean(req.body.disconnect),
+        slowResponseMs: Number(req.body.slowResponseMs ?? 0),
+      })
+    }
+    auditLog.record('FAULT_INJECTION', 'api', deviceId || req.body?.connectionId, faultType)
     broadcast('fault.injected', event)
     res.status(201).json(event)
   })
 
   app.get('/api/signals', (_req, res) => {
-    res.json(signalMapper.watchTable())
+    res.json(signalRegistry.list())
+  })
+
+  app.get('/api/signals/trace', (_req, res) => {
+    res.json(signalTrace.list(undefined, 500))
+  })
+
+  app.get('/api/connections', (_req, res) => {
+    res.json(
+      connectionManager.list().map((c) => ({
+        config: c.config,
+        status: c.status,
+        adapter: c.adapter.getStatus(),
+      })),
+    )
+  })
+
+  app.post('/api/connections', (req, res) => {
+    try {
+      const managed = connectionManager.create(req.body)
+      res.status(201).json({ config: managed.config, status: managed.status })
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/connections/:id/connect', async (req, res) => {
+    try {
+      await connectionManager.start(req.params.id)
+      res.json(connectionManager.get(req.params.id)?.status)
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/connections/:id/disconnect', async (req, res) => {
+    await connectionManager.stop(req.params.id)
+    res.json({ status: 'DISCONNECTED' })
+  })
+
+  app.post('/api/connections/:id/test', async (req, res) => {
+    const result = await connectionManager.test(req.params.id)
+    res.status(result.ok ? 200 : 503).json(result)
+  })
+
+  app.get('/api/protocol/log', (req, res) => {
+    res.json(
+      protocolMonitor.list({
+        protocol: req.query.protocol as never,
+        direction: req.query.direction as never,
+        result: req.query.result as never,
+        search: req.query.search as string | undefined,
+      }),
+    )
   })
 
   app.get('/api/commands', (_req, res) => {
     res.json(deviceRegistry.commandLog.slice(-100))
+  })
+
+  app.get('/api/audit', (_req, res) => {
+    res.json(auditLog.list(200))
   })
 
   /** Internal hook used by the UI runtime to push twin snapshots into the gateway. */
@@ -190,7 +279,13 @@ export function startGateway(options: GatewayOptions = {}): { port: number; clos
 
   wss.on('connection', (socket) => {
     clients.add(socket)
-    socket.send(JSON.stringify({ type: 'connected', payload: { service: 'warehousesim' }, timestamp: Date.now() }))
+    socket.send(
+      JSON.stringify({
+        type: 'connected',
+        payload: { service: 'warehousesim', version: '0.4' },
+        timestamp: Date.now(),
+      }),
+    )
     socket.on('close', () => clients.delete(socket))
   })
 

@@ -19,6 +19,9 @@ import { experimentManager } from '../../experiment/ExperimentManager.ts'
 import { modelValidator } from '../../validation/ModelValidator.ts'
 import { deviceRegistry } from '../../virtual/DeviceRegistry.ts'
 import { replayEngine } from '../../replay/ReplayEngine.ts'
+import { useNavStore } from '../../store/navStore.ts'
+import type { PrimaryNav } from '../../store/navStore.ts'
+import { industrialRuntime } from '../../industrial/IndustrialRuntime.ts'
 
 const SPEEDS: SimulationSpeed[] = [1, 5, 10, 50]
 
@@ -52,6 +55,20 @@ export default function Toolbar() {
   const operatingMode = useDigitalTwinStore((state) => state.operatingMode)
   const setOperatingMode = useDigitalTwinStore((state) => state.setOperatingMode)
   const snapshot = useSimulationStore((state) => state.snapshot)
+  const primaryNav = useNavStore((state) => state.primaryNav)
+  const setPrimaryNav = useNavStore((state) => state.setPrimaryNav)
+
+  const navItems: Array<{ key: PrimaryNav; label: string }> = [
+    { key: 'model', label: 'Model' },
+    { key: 'simulation', label: 'Simulation' },
+    { key: 'experiments', label: 'Experiments' },
+    { key: 'twin3d', label: '3D Twin' },
+    { key: 'commissioning', label: 'Commissioning' },
+    { key: 'connections', label: 'Connections' },
+    { key: 'signals', label: 'Signals' },
+    { key: 'protocol', label: 'Protocol Monitor' },
+    { key: 'replay', label: 'Replay' },
+  ]
 
   const scenarioItems: MenuProps['items'] = [
     { key: 'empty', label: 'Empty project' },
@@ -72,6 +89,28 @@ export default function Toolbar() {
           onChange={(event) => useProjectStore.getState().setProjectName(event.target.value)}
         />
       </div>
+      <Space size={4} wrap className="primary-nav">
+        {navItems.map((item) => (
+          <Button
+            key={item.key}
+            size="small"
+            type={primaryNav === item.key ? 'primary' : 'default'}
+            onClick={() => {
+              setPrimaryNav(item.key)
+              if (item.key === 'twin3d') setViewMode('3d')
+              if (item.key === 'model') setViewMode('2d')
+              if (item.key === 'replay') {
+                setOperatingMode('replay')
+                replayEngine.load(snapshot.eventLog)
+                replayEngine.play(5)
+              }
+            }}
+          >
+            {item.label}
+          </Button>
+        ))}
+      </Space>
+      <span className="toolbar-sep" />
       <Space size={6} wrap>
         <Dropdown
           menu={{
@@ -86,6 +125,7 @@ export default function Toolbar() {
               const next = useProjectStore.getState().document
               deviceRegistry.loadFromProject(next)
               simulationRuntime.reset(next, useProjectStore.getState().revision)
+              industrialRuntime.bootstrapFromProject(next)
             },
           }}
         >
@@ -125,7 +165,17 @@ export default function Toolbar() {
         >
           Replay
         </Button>
-        <Button size="small" onClick={() => saveProject(document)}>
+        <Button
+          size="small"
+          onClick={() => {
+            const withIndustrial = {
+              ...document,
+              industrial: industrialRuntime.exportSlice(),
+            }
+            useProjectStore.getState().setDocument(withIndustrial)
+            saveProject(withIndustrial)
+          }}
+        >
           Save
         </Button>
         <Button
@@ -135,6 +185,7 @@ export default function Toolbar() {
             if (loaded) {
               setDocument(loaded)
               deviceRegistry.loadFromProject(loaded)
+              industrialRuntime.bootstrapFromProject(loaded)
             } else {
               setError('No saved project in LocalStorage')
             }
@@ -142,7 +193,15 @@ export default function Toolbar() {
         >
           Load
         </Button>
-        <Button size="small" onClick={() => exportProject(document)}>
+        <Button
+          size="small"
+          onClick={() =>
+            exportProject({
+              ...document,
+              industrial: industrialRuntime.exportSlice(),
+            })
+          }
+        >
           Export
         </Button>
         <Button
@@ -160,6 +219,7 @@ export default function Toolbar() {
                 const imported = await importProject(file)
                 setDocument(imported)
                 deviceRegistry.loadFromProject(imported)
+                industrialRuntime.bootstrapFromProject(imported)
               } catch (error) {
                 setError(error instanceof Error ? error.message : 'Import failed')
               }

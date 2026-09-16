@@ -59,9 +59,19 @@ export class VirtualConveyor implements VirtualDevice {
   private signalMap(): Record<string, unknown> {
     return {
       running: this.state === 'RUNNING',
+      Running: this.state === 'RUNNING',
       occupied: this.occupied,
+      Occupied: this.occupied,
       fault: this.state === 'FAULT',
+      Fault: this.state === 'FAULT',
       blocked: this.state === 'BLOCKED',
+      Blocked: this.state === 'BLOCKED',
+      AutoMode: true,
+      SensorIn: Boolean(this.sensorFlags.SensorIn ?? this.sensorFlags.sensorIn),
+      SensorOut: Boolean(this.sensorFlags.SensorOut ?? this.sensorFlags.sensorOut ?? this.sensorFlags.sensor02),
+      Start: false,
+      Stop: false,
+      Reset: false,
       ...this.sensorFlags,
     }
   }
@@ -204,6 +214,15 @@ export class VirtualAgv implements VirtualDevice {
         arrivedPickup: this.arrivedPickup,
         arrivedDropoff: this.arrivedDropoff,
         loadComplete: this.loadComplete,
+        Idle: this.state === 'IDLE',
+        Busy: this.state !== 'IDLE' && this.state !== 'FAULT',
+        Arrived: this.arrivedPickup || this.arrivedDropoff,
+        Charging: this.state === 'CHARGING',
+        Fault: this.state === 'FAULT',
+        Battery: 85,
+        Mission: this.currentTaskId ?? '',
+        Cancel: false,
+        Reset: false,
       },
     }
   }
@@ -242,11 +261,15 @@ export class VirtualAgv implements VirtualDevice {
   }
 }
 
-export type StackerVirtualState = 'IDLE' | 'MOVING' | 'PICKING' | 'PLACING' | 'FAULT'
+export type StackerVirtualState = 'IDLE' | 'MOVING' | 'PICKING' | 'PLACING' | 'COMPLETE' | 'FAULT'
 
 export class VirtualStacker implements VirtualDevice {
   readonly type = 'stacker'
   state: StackerVirtualState = 'IDLE'
+  currentColumn = 0
+  currentLevel = 0
+  lastCommandId?: string
+  complete = false
 
   constructor(readonly id: string, readonly name: string) {}
 
@@ -263,7 +286,13 @@ export class VirtualStacker implements VirtualDevice {
     }
     switch (command.commandType) {
       case 'INBOUND':
+      case 'START_TASK':
+      case 'OUTBOUND': {
         this.state = 'MOVING'
+        this.complete = false
+        this.lastCommandId = command.commandId
+        this.currentColumn = Number(command.parameters?.column ?? command.parameters?.Column ?? 1)
+        this.currentLevel = Number(command.parameters?.level ?? command.parameters?.Level ?? 1)
         return {
           commandId: command.commandId,
           deviceId: this.id,
@@ -271,17 +300,10 @@ export class VirtualStacker implements VirtualDevice {
           message: 'Inbound accepted',
           timestamp: now,
         }
-      case 'OUTBOUND':
-        this.state = 'MOVING'
-        return {
-          commandId: command.commandId,
-          deviceId: this.id,
-          status: 'accepted',
-          message: 'Outbound accepted',
-          timestamp: now,
-        }
+      }
       case 'RESET':
         this.state = 'IDLE'
+        this.complete = false
         return {
           commandId: command.commandId,
           deviceId: this.id,
@@ -300,6 +322,22 @@ export class VirtualStacker implements VirtualDevice {
     }
   }
 
+  /** Advance FSM for PLC demos: MOVING → PICKING → PLACING → COMPLETE. */
+  advance(): StackerVirtualState {
+    if (this.state === 'MOVING') {
+      this.state = 'PICKING'
+    } else if (this.state === 'PICKING') {
+      this.state = 'PLACING'
+    } else if (this.state === 'PLACING') {
+      this.state = 'COMPLETE'
+      this.complete = true
+    } else if (this.state === 'COMPLETE') {
+      this.state = 'IDLE'
+      this.complete = false
+    }
+    return this.state
+  }
+
   getStatus(): DeviceStatus {
     return {
       deviceId: this.id,
@@ -308,7 +346,7 @@ export class VirtualStacker implements VirtualDevice {
       state: this.state,
       fault: this.state === 'FAULT',
       lastUpdated: Date.now(),
-      signals: {},
+      signals: this.signalMap(),
     }
   }
 
@@ -317,11 +355,25 @@ export class VirtualStacker implements VirtualDevice {
       deviceId: this.id,
       status: this.state,
       timestamp: now,
-      signals: {},
+      signals: this.signalMap(),
     }
   }
 
   injectFault(): void {
     this.state = 'FAULT'
+  }
+
+  private signalMap(): Record<string, unknown> {
+    return {
+      Idle: this.state === 'IDLE',
+      Busy: this.state === 'MOVING' || this.state === 'PICKING' || this.state === 'PLACING',
+      Complete: this.complete || this.state === 'COMPLETE',
+      Fault: this.state === 'FAULT',
+      CurrentLevel: this.currentLevel,
+      CurrentColumn: this.currentColumn,
+      TaskCommand: false,
+      Reset: false,
+      Ack: this.state !== 'IDLE' && this.state !== 'FAULT',
+    }
   }
 }

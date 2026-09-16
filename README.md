@@ -1,20 +1,23 @@
 # WarehouseSim
 
-Discrete-event warehouse simulation with digital twin visualization and virtual commissioning.
+Discrete-event warehouse simulation with digital twin visualization, virtual commissioning, and industrial protocol connectivity.
 
 ## Versions
 
-- **V0.2** — Experiment & Traffic (scenario sweeps, TrafficManager, KPI/bottlenecks)
+- **V0.2** — Experiment & Traffic
 - **V0.3** — 3D Digital Twin & Virtual Commissioning
+- **V0.4** — Industrial Connectivity & PLC Integration
 
 ## Architecture
 
 ```text
-Project Model → Simulation Engine → Digital Twin State → 2D / 3D Renderers
-External WCS → Protocol Adapter → VirtualDevice FSM → Twin State
+External System (PLC / WCS / ACS)
+  → Protocol Adapter (OPC UA | Modbus | MQTT | TCP | HTTP | WS)
+    → Signal Mapping → Command Bus → Virtual Device → Simulation Engine
+      → Device State → Feedback Bus → Signal Mapping → Protocol Adapter
 ```
 
-Three.js never owns business logic. Renderers only read `DigitalTwinState`.
+Devices never import protocols. Protocols never own device FSMs.
 
 ## Scripts
 
@@ -27,15 +30,26 @@ npm test
 npm run build
 ```
 
-## Emulation API (gateway)
+## V0.4 UI
+
+Model · Simulation · Experiments · 3D Twin · Commissioning · **Connections** · **Signals** · **Protocol Monitor** · Replay
+
+## Emulation / Integration API
 
 - `POST /api/devices/:id/commands`
 - `GET /api/devices/:id/status`
 - `POST /api/tasks`
-- `GET /api/simulation/status`
-- `POST /api/faults`
+- `GET/POST /api/connections` · connect · disconnect · test
+- `GET /api/signals` · `/api/signals/trace`
+- `GET /api/protocol/log`
+- `POST /api/faults` (device + network delay/loss/disconnect)
 - `WS /ws`
 
 ## Schema
 
-Projects use `schemaVersion: "0.3"` with migration from 0.1/0.2.
+Projects use `schemaVersion: "0.4"` with migration from 0.1–0.3.
+Industrial slice: `connections`, `signalMappings`, `ioMappings` (secrets exported as references).
+
+## Demos
+
+Protocol Monitor → **Run Full PLC/WCS/ACS Demo**, or PLC Conveyor / Modbus / MQTT AGV.

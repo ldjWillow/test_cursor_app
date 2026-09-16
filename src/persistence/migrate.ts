@@ -56,7 +56,13 @@ export function migrateProject(raw: unknown): ProjectDocument {
   }
 
   const versionBump =
-    schemaVersion === '0.1' ? 3 : schemaVersion === '0.2' ? Math.max(3, project.project?.version ?? 2) : project.project?.version ?? 3
+    schemaVersion === '0.1'
+      ? 4
+      : schemaVersion === '0.2'
+        ? Math.max(4, project.project?.version ?? 2)
+        : schemaVersion === '0.3'
+          ? Math.max(4, project.project?.version ?? 3)
+          : project.project?.version ?? 4
 
   const migrated: ProjectDocument = {
     ...project,
@@ -79,6 +85,11 @@ export function migrateProject(raw: unknown): ProjectDocument {
       conveyorModel: '',
     },
     signalMappings: project.signalMappings ?? [],
+    industrial: project.industrial ?? {
+      connections: [],
+      signalMappings: [],
+      ioMappings: [],
+    },
   }
 
   return migrated
@@ -98,6 +109,11 @@ export function ensureSchemaVersion(document: ProjectDocument): ProjectDocument 
         rackModel: '',
         stackerModel: '',
         conveyorModel: '',
+      },
+      industrial: document.industrial ?? {
+        connections: [],
+        signalMappings: [],
+        ioMappings: [],
       },
     }
   }

@@ -397,3 +397,51 @@ body,
   fill: #e8edf5 !important;
   border-bottom: 1px solid var(--line) !important;
 }
+
+/* V0.4 Industrial Connectivity */
+.app-shell.nav-connections,
+.app-shell.nav-signals,
+.app-shell.nav-protocol,
+.app-shell.nav-commissioning {
+  grid-template-columns: 1fr;
+  grid-template-rows: 52px minmax(0, 1fr);
+}
+
+.industrial-full {
+  grid-column: 1 / -1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  background: linear-gradient(180deg, #101722 0%, #0c1118 100%);
+}
+
+.industrial-panel {
+  background: #151c27;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 12px;
+  min-height: 100%;
+}
+
+.primary-nav {
+  max-width: 720px;
+}
+
+.demo-log {
+  margin-top: 12px;
+  padding: 8px;
+  background: #0c1118;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.demo-log pre {
+  margin: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: #c5d0de;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+}
+
