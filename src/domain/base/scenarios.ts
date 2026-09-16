@@ -166,40 +166,33 @@ export function asrsScenario(): ProjectDocument {
 
 /**
  * Standard validation warehouse for V0.2 experiments:
- * 2 Source stations, 2 Sink stations, 1 Stacker, 6 Stations, AGV path network, 1000 tasks.
+ * 2 pickup stations, 2 dropoff stations, mid stations, stacker/rack spur,
+ * AGV path network, and N staggered transport tasks.
  */
 export function standardWarehouseScenario(agvCount = 4, taskCount = 1000): ProjectDocument {
-  const stations = [
-    device('station-s1', DeviceType.Station, 'Source-Station-1', 80, 120),
-    device('station-s2', DeviceType.Station, 'Source-Station-2', 80, 280),
-    device('station-t1', DeviceType.Station, 'Sink-Station-1', 720, 120),
-    device('station-t2', DeviceType.Station, 'Sink-Station-2', 720, 280),
-    device('station-m1', DeviceType.Station, 'Station-M1', 280, 80),
-    device('station-m2', DeviceType.Station, 'Station-M2', 520, 80),
+  const devices = [
+    device('station-s1', DeviceType.Station, 'Source-Station-1', 60, 160),
+    device('station-s2', DeviceType.Station, 'Source-Station-2', 60, 260),
+    device('n1', DeviceType.PathNode, 'N1', 180, 210, { label: 'N1' }),
+    device('n2', DeviceType.PathNode, 'Intersection-N2', 320, 210, { label: 'N2' }),
+    device('n3', DeviceType.PathNode, 'N3', 460, 210, { label: 'N3' }),
+    device('station-t1', DeviceType.Station, 'Sink-Station-1', 600, 160),
+    device('station-t2', DeviceType.Station, 'Sink-Station-2', 600, 260),
+    device('station-m1', DeviceType.Station, 'Station-M1', 320, 80),
+    device('station-m2', DeviceType.Station, 'Station-M2', 320, 340),
+    device('stacker-1', DeviceType.Stacker, 'Stacker-01', 460, 340),
+    device('rack-1', DeviceType.Rack, 'Rack-01', 580, 340, { rows: 1, columns: 6, levels: 3 }),
+    ...Array.from({ length: agvCount }, (_, index) =>
+      device(
+        `agv-${index + 1}`,
+        DeviceType.Agv,
+        `AGV-${String(index + 1).padStart(2, '0')}`,
+        80,
+        60 + index * 32,
+        { speed: 1.5, loadTime: 3, unloadTime: 3 },
+      ),
+    ),
   ]
-
-  const pathNodes = [
-    device('n-c', DeviceType.PathNode, 'Intersection-C', 400, 200, { label: 'C' }),
-    device('n-a', DeviceType.PathNode, 'N-A', 200, 200, { label: 'A' }),
-    device('n-b', DeviceType.PathNode, 'N-B', 600, 200, { label: 'B' }),
-    device('n-d', DeviceType.PathNode, 'N-D', 400, 80, { label: 'D' }),
-    device('n-e', DeviceType.PathNode, 'N-E', 400, 320, { label: 'E' }),
-  ]
-
-  const stacker = device('stacker-1', DeviceType.Stacker, 'Stacker-01', 400, 400)
-  const rack = device('rack-1', DeviceType.Rack, 'Rack-01', 520, 400, {
-    rows: 1,
-    columns: 6,
-    levels: 3,
-  })
-
-  const agvs = Array.from({ length: agvCount }, (_, index) =>
-    device(`agv-${index + 1}`, DeviceType.Agv, `AGV-${String(index + 1).padStart(2, '0')}`, 120 + index * 28, 200, {
-      speed: 1.5,
-      loadTime: 3,
-      unloadTime: 3,
-    }),
-  )
 
   const pairs: Array<[string, string]> = [
     ['station-s1', 'station-t1'],
@@ -214,45 +207,56 @@ export function standardWarehouseScenario(agvCount = 4, taskCount = 1000): Proje
       id: `task-${index + 1}`,
       sourceId: pair[0],
       targetId: pair[1],
-      createTime: Math.floor(index / 4) * 2,
+      createTime: index * 3,
       priority: index + 1,
       status: TaskStatus.Waiting,
     }
   })
 
-  const nodes = [...stations, ...pathNodes, stacker, rack].map((item) => ({
-    id: item.id,
-    x: item.x,
-    y: item.y,
-    label: item.name,
-  }))
+  const pathIds = [
+    'station-s1',
+    'station-s2',
+    'n1',
+    'n2',
+    'n3',
+    'station-t1',
+    'station-t2',
+    'station-m1',
+    'station-m2',
+    'stacker-1',
+    'rack-1',
+  ]
 
   return {
     schemaVersion: SCHEMA_VERSION,
     project: { name: `Standard warehouse (${agvCount} AGVs)`, version: 2 },
-    devices: [...stations, ...pathNodes, stacker, rack, ...agvs],
-    nodes,
+    devices,
+    nodes: devices
+      .filter((item) => pathIds.includes(item.id))
+      .map((item) => ({ id: item.id, x: item.x, y: item.y, label: item.name })),
     edges: [
-      ...bidirectional('s1-a', 'station-s1', 'n-a', 12),
-      ...bidirectional('s2-a', 'station-s2', 'n-a', 12),
-      ...bidirectional('a-c', 'n-a', 'n-c', 10),
-      ...bidirectional('c-b', 'n-c', 'n-b', 10),
-      ...bidirectional('b-t1', 'n-b', 'station-t1', 12),
-      ...bidirectional('b-t2', 'n-b', 'station-t2', 12),
-      ...bidirectional('c-d', 'n-c', 'n-d', 8),
-      ...bidirectional('d-m1', 'n-d', 'station-m1', 8),
-      ...bidirectional('d-m2', 'n-d', 'station-m2', 8),
-      ...bidirectional('c-e', 'n-c', 'n-e', 8),
-      ...bidirectional('e-stacker', 'n-e', 'stacker-1', 8),
+      ...bidirectional('s1-n1', 'station-s1', 'n1', 10),
+      ...bidirectional('s2-n1', 'station-s2', 'n1', 10),
+      ...bidirectional('n1-n2', 'n1', 'n2', 10),
+      ...bidirectional('n2-n3', 'n2', 'n3', 10),
+      ...bidirectional('n3-t1', 'n3', 'station-t1', 10),
+      ...bidirectional('n3-t2', 'n3', 'station-t2', 10),
+      ...bidirectional('n2-m1', 'n2', 'station-m1', 8),
+      ...bidirectional('n2-m2', 'n2', 'station-m2', 8),
+      ...bidirectional('m2-stacker', 'station-m2', 'stacker-1', 8),
       ...bidirectional('stacker-rack', 'stacker-1', 'rack-1', 6),
-    ],
+    ].map((edge) => ({
+      ...edge,
+      // Main spine keeps capacity 1 to exercise TrafficManager; station spurs are wider.
+      capacity: edge.id.includes('n1-n2') || edge.id.includes('n2-n3') ? 1 : 2,
+    })),
     tasks,
     simulationConfig: {
       seed: 1001,
       taskCount,
       taskSourceId: 'station-s1',
       taskTargetId: 'station-t1',
-      taskInterval: 2,
+      taskInterval: 3,
       enableTraffic: true,
     },
   }

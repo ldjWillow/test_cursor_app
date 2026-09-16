@@ -342,6 +342,10 @@ function tryAdvanceHop(engine: SimulationEngine, agv: AgvRuntime, taskId: string
           `${agv.name} waiting ${resourceType} ${resourceId}`,
         )
       }
+      // Release current node while waiting to avoid circular wait deadlocks
+      // with opposing AGVs that need this node to clear the blocked resource.
+      engine.traffic.releaseNode(agv.id, from, time)
+      wakeWaiters(engine, 'node', from, time)
       engine.traffic.enqueueWaiter({
         agvId: agv.id,
         resourceType,
