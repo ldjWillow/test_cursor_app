@@ -3,6 +3,8 @@ import type { StatisticsSnapshot } from '../types/index.ts'
 export function emptyStatistics(): StatisticsSnapshot {
   return {
     throughput: 0,
+    agvTaskThroughput: 0,
+    materialThroughput: 0,
     completedTasks: 0,
     failedTasks: 0,
     generatedCount: 0,

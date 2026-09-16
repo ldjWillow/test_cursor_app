@@ -10,6 +10,7 @@ import {
   asrsScenario,
   conveyorScenario,
   emptyProject,
+  stackerSinkScenario,
   standardWarehouseScenario,
 } from '../../domain/base/scenarios.ts'
 import { compareAgvCounts, runAgvExperiment } from '../../simulation/experiments.ts'
@@ -39,16 +40,21 @@ export default function Toolbar() {
   const duplicateSelected = useProjectStore((state) => state.duplicateSelected)
   const speed = useSimulationStore((state) => state.speed)
   const status = useSimulationStore((state) => state.status)
+  const resultsStale = useSimulationStore((state) => state.resultsStale)
   const setSpeed = useSimulationStore((state) => state.setSpeed)
   const setComparison = useSimulationStore((state) => state.setComparison)
   const setExperiment = useSimulationStore((state) => state.setExperiment)
   const setError = useSimulationStore((state) => state.setError)
+
+  const editingLocked = status === SimulationStatus.Running
+  const lockTitle = editingLocked ? '仿真运行中，请先 Pause 或 Reset' : undefined
 
   const scenarioItems: MenuProps['items'] = [
     { key: 'empty', label: 'Empty project' },
     { key: 'conveyor', label: 'Source → Conveyor → Sink' },
     { key: 'agv', label: 'AGV A → N1 → N2 → B' },
     { key: 'asrs', label: 'Rack + Stacker inbound' },
+    { key: 'stacker-sink', label: 'Source → Stacker → Sink' },
     { key: 'standard', label: 'Standard warehouse (V0.2)' },
   ]
 
@@ -59,30 +65,38 @@ export default function Toolbar() {
         <Input
           size="small"
           value={document.project.name}
+          disabled={editingLocked}
+          title={lockTitle}
           onChange={(event) => useProjectStore.getState().setProjectName(event.target.value)}
         />
       </div>
       <Space size={6} wrap>
         <Dropdown
+          disabled={editingLocked}
           menu={{
             items: scenarioItems,
             onClick: ({ key }) => {
               if (key === 'conveyor') setDocument(conveyorScenario())
               if (key === 'agv') setDocument(agvScenario(3, 100))
               if (key === 'asrs') setDocument(asrsScenario())
+              if (key === 'stacker-sink') setDocument(stackerSinkScenario())
               if (key === 'standard') setDocument(standardWarehouseScenario(4, 200))
               if (key === 'empty') setDocument(emptyProject('WarehouseSim'))
               simulationRuntime.reset(useProjectStore.getState().document, useProjectStore.getState().revision)
             },
           }}
         >
-          <Button size="small">New</Button>
+          <Button size="small" disabled={editingLocked} title={lockTitle}>
+            New
+          </Button>
         </Dropdown>
         <Button size="small" onClick={() => saveProject(document)}>
           Save
         </Button>
         <Button
           size="small"
+          disabled={editingLocked}
+          title={lockTitle}
           onClick={() => {
             const loaded = loadProject()
             if (loaded) {
@@ -99,6 +113,8 @@ export default function Toolbar() {
         </Button>
         <Button
           size="small"
+          disabled={editingLocked}
+          title={lockTitle}
           onClick={() => {
             const input = window.document.createElement('input')
             input.type = 'file'
@@ -119,22 +135,23 @@ export default function Toolbar() {
         >
           Import
         </Button>
-        <Button size="small" onClick={undo}>
+        <Button size="small" disabled={editingLocked} title={lockTitle} onClick={undo}>
           Undo
         </Button>
-        <Button size="small" onClick={redo}>
+        <Button size="small" disabled={editingLocked} title={lockTitle} onClick={redo}>
           Redo
         </Button>
-        <Button size="small" onClick={duplicateSelected}>
+        <Button size="small" disabled={editingLocked} title={lockTitle} onClick={duplicateSelected}>
           Duplicate
         </Button>
-        <Button size="small" danger onClick={removeSelected}>
+        <Button size="small" danger disabled={editingLocked} title={lockTitle} onClick={removeSelected}>
           Delete
         </Button>
         <span className="toolbar-sep" />
         <Button
           size="small"
           type="primary"
+          disabled={status === SimulationStatus.Running}
           onClick={() => {
             if (!validateOrError(document)) {
               return
@@ -144,13 +161,22 @@ export default function Toolbar() {
         >
           Start
         </Button>
-        <Button size="small" onClick={() => simulationRuntime.pause()}>
+        <Button
+          size="small"
+          disabled={status !== SimulationStatus.Running}
+          onClick={() => simulationRuntime.pause()}
+        >
           Pause
         </Button>
         <Button size="small" onClick={() => simulationRuntime.reset(document, revision)}>
           Reset
         </Button>
-        <Button size="small" onClick={() => simulationRuntime.step(document, revision)}>
+        <Button
+          size="small"
+          disabled={status === SimulationStatus.Running}
+          title="Step = process exactly one discrete event"
+          onClick={() => simulationRuntime.step(document, revision)}
+        >
           Step
         </Button>
         {SPEEDS.map((value) => (
@@ -183,10 +209,10 @@ export default function Toolbar() {
             if (!validateOrError(document)) {
               return
             }
-            setComparison(compareAgvCounts([3, 4, 5, 6], 100))
+            setComparison(compareAgvCounts(document, [3, 4, 5, 6]))
           }}
         >
-          Compare 3-6 AGVs
+          Compare 3-6 AGVs (current model)
         </Button>
         <Button
           size="small"
@@ -209,6 +235,8 @@ export default function Toolbar() {
                 simulationTime: summary.results[0]?.simulationTime ?? 0,
                 emptyTravelRatio: summary.emptyTravelRatio.mean,
                 routeWaitingTime: summary.routeWaitingTime.mean,
+                taskCount: document.simulationConfig.taskCount || document.tasks.length,
+                seed: document.simulationConfig.seed,
               })),
             )
           }}
@@ -218,6 +246,7 @@ export default function Toolbar() {
       </Space>
       <Typography.Text className="toolbar-status" type="secondary">
         v0.2 · {status === SimulationStatus.Idle ? 'IDLE' : status.toUpperCase()}
+        {resultsStale ? ' · STALE' : ''}
       </Typography.Text>
     </header>
   )

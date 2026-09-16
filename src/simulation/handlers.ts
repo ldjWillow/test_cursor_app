@@ -5,7 +5,7 @@ import { EventType } from './SimulationEvent.ts'
 import type { SimulationEvent } from './SimulationEvent.ts'
 import type { SimulationEngine } from './SimulationEngine.ts'
 import { createMaterial } from './SimulationWorld.ts'
-import { markAgvStatus, markConveyorOccupancy, markStackerBusy } from '../statistics/StatisticsEngine.ts'
+import { markAgvStatus, markConveyorOccupancy, markStackerBusy, markStackerStatus } from '../statistics/StatisticsEngine.ts'
 import type { AgvRuntime, ConveyorRuntime, MaterialRuntime, StackerJob, StackerRuntime } from './runtimeTypes.ts'
 import { createTransportTask } from './DemandProfile.ts'
 
@@ -50,7 +50,7 @@ function occupySlot(
   engine: SimulationEngine,
   stacker: StackerRuntime,
   kind: 'inbound' | 'outbound',
-): StackerJob | undefined {
+): { column: number; level: number } | undefined {
   const rack = stacker.rackId ? engine.world.racks.get(stacker.rackId) : [...engine.world.racks.values()][0]
   if (!rack) {
     return undefined
@@ -60,48 +60,200 @@ function occupySlot(
     if (!slot) {
       return undefined
     }
-    return {
-      id: nextId('job'),
-      kind,
-      column: slot.column,
-      level: slot.level,
-      createdTime: engine.getCurrentTime(),
-    }
+    return { column: slot.column, level: slot.level }
   }
   const slot = rack.locations.find((location) => location.occupied)
   if (!slot) {
     return undefined
   }
-  return {
-    id: nextId('job'),
-    kind,
-    column: slot.column,
-    level: slot.level,
-    createdTime: engine.getCurrentTime(),
+  return { column: slot.column, level: slot.level }
+}
+
+function moveTimeX(stacker: StackerRuntime, fromCol: number, toCol: number): number {
+  const horizontal = Math.abs(toCol - fromCol) * stacker.bayWidth
+  return horizontal / stacker.horizontalSpeed
+}
+
+function moveTimeY(stacker: StackerRuntime, fromLevel: number, toLevel: number): number {
+  const vertical = Math.abs(toLevel - fromLevel) * stacker.levelHeight
+  return vertical / stacker.verticalSpeed
+}
+
+function scheduleAxisMoves(
+  engine: SimulationEngine,
+  stacker: StackerRuntime,
+  time: number,
+  toColumn: number,
+  toLevel: number,
+  jobId: string,
+  afterType: typeof EventType.StackerPick | typeof EventType.StackerDrop,
+): void {
+  markStackerStatus(stacker, time, 'moving')
+  const dx = moveTimeX(stacker, stacker.currentColumn, toColumn)
+  const dy = moveTimeY(stacker, stacker.currentLevel, toLevel)
+  const payload = { jobId, toColumn, toLevel, afterType }
+
+  if (dx <= 1e-12 && dy <= 1e-12) {
+    engine.scheduleEvent({
+      time,
+      type: afterType,
+      targetId: stacker.id,
+      payload: { jobId },
+      priority: 1,
+    })
+    return
   }
+
+  if (dx > 1e-12) {
+    engine.scheduleEvent({
+      time: time + dx,
+      type: EventType.StackerMoveX,
+      targetId: stacker.id,
+      payload: { ...payload, remainingY: dy > 1e-12 },
+    })
+    return
+  }
+
+  engine.scheduleEvent({
+    time: time + dy,
+    type: EventType.StackerMoveY,
+    targetId: stacker.id,
+    payload: { ...payload, remainingX: false },
+  })
 }
 
 function startStackerIfIdle(engine: SimulationEngine, stacker: StackerRuntime, time: number): void {
-  if (stacker.busy) {
+  if (stacker.busy || stacker.activeJobId) {
     return
   }
   const job = stacker.queue[0]
   if (!job) {
+    markStackerBusy(stacker, time, false)
     return
   }
-  const horizontal = Math.abs(job.column - stacker.currentColumn) * stacker.bayWidth
-  const vertical = Math.abs(job.level - stacker.currentLevel) * stacker.levelHeight
-  const travelTime = Math.max(
-    horizontal / stacker.horizontalSpeed,
-    vertical / stacker.verticalSpeed,
-  )
-  markStackerBusy(stacker, time, true)
+  stacker.activeJobId = job.id
+  job.phase = 'to_pick'
   engine.scheduleEvent({
-    time: time + travelTime,
-    type: EventType.StackerMove,
+    time,
+    type: EventType.StackerEnqueue,
     targetId: stacker.id,
-    payload: { jobId: job.id },
+    payload: { jobId: job.id, materialId: job.materialId },
+    priority: 2,
   })
+}
+
+function enqueueStackerJob(
+  engine: SimulationEngine,
+  stacker: StackerRuntime,
+  material: MaterialRuntime,
+  time: number,
+): boolean {
+  const hasRack = Boolean(stacker.rackId && engine.world.racks.has(stacker.rackId))
+  const hasTransfer =
+    stacker.downstreamIds.some(
+      (id) => engine.world.sinks.has(id) || engine.world.conveyors.has(id),
+    )
+
+  let job: StackerJob
+  if (hasRack) {
+    const slot = occupySlot(engine, stacker, 'inbound')
+    if (!slot) {
+      return false
+    }
+    job = {
+      id: nextId('job'),
+      kind: 'inbound',
+      materialId: material.id,
+      pickColumn: 0,
+      pickLevel: 0,
+      column: slot.column,
+      level: slot.level,
+      createdTime: time,
+      phase: 'to_pick',
+    }
+  } else if (hasTransfer) {
+    job = {
+      id: nextId('job'),
+      kind: 'transfer',
+      materialId: material.id,
+      pickColumn: 0,
+      pickLevel: 0,
+      column: 1,
+      level: 0,
+      createdTime: time,
+      phase: 'to_pick',
+    }
+  } else {
+    return false
+  }
+
+  material.locationId = stacker.id
+  stacker.queue.push(job)
+  if (!stacker.busy) {
+    stacker.status = 'queued'
+  }
+  startStackerIfIdle(engine, stacker, time)
+  return true
+}
+
+function pullWaitingIntoStacker(engine: SimulationEngine, stacker: StackerRuntime, time: number): void {
+  while (stacker.waiting.length > 0) {
+    const materialId = stacker.waiting[0]
+    if (!materialId) {
+      break
+    }
+    const material = engine.world.materials.get(materialId)
+    if (!material) {
+      stacker.waiting.shift()
+      continue
+    }
+    if (!enqueueStackerJob(engine, stacker, material, time)) {
+      break
+    }
+    stacker.waiting.shift()
+  }
+
+  for (const source of engine.world.sources.values()) {
+    if (!source.downstreamIds.includes(stacker.id)) {
+      continue
+    }
+    while (source.waiting.length > 0) {
+      const materialId = source.waiting[0]
+      if (!materialId) {
+        break
+      }
+      const material = engine.world.materials.get(materialId)
+      if (!material) {
+        source.waiting.shift()
+        continue
+      }
+      if (!enqueueStackerJob(engine, stacker, material, time)) {
+        break
+      }
+      source.waiting.shift()
+    }
+  }
+
+  for (const conveyor of engine.world.conveyors.values()) {
+    if (!conveyor.downstreamIds.includes(stacker.id)) {
+      continue
+    }
+    while (conveyor.waiting.length > 0) {
+      const materialId = conveyor.waiting[0]
+      if (!materialId) {
+        break
+      }
+      const material = engine.world.materials.get(materialId)
+      if (!material) {
+        conveyor.waiting.shift()
+        continue
+      }
+      if (!enqueueStackerJob(engine, stacker, material, time)) {
+        break
+      }
+      conveyor.waiting.shift()
+    }
+  }
 }
 
 function deliver(
@@ -113,6 +265,7 @@ function deliver(
   const destIds =
     engine.world.sources.get(fromId)?.downstreamIds ??
     engine.world.conveyors.get(fromId)?.downstreamIds ??
+    engine.world.stackers.get(fromId)?.downstreamIds ??
     []
 
   for (const destId of destIds) {
@@ -133,14 +286,23 @@ function deliver(
     }
     const stacker = engine.world.stackers.get(destId)
     if (stacker) {
-      const job = occupySlot(engine, stacker, 'inbound')
-      if (!job) {
-        return false
+      if (enqueueStackerJob(engine, stacker, material, time)) {
+        return true
       }
-      material.locationId = stacker.id
-      stacker.queue.push(job)
-      startStackerIfIdle(engine, stacker, time)
-      return true
+      const canBuffer =
+        Boolean(stacker.rackId && engine.world.racks.has(stacker.rackId)) ||
+        stacker.downstreamIds.some(
+          (id) => engine.world.sinks.has(id) || engine.world.conveyors.has(id),
+        )
+      if (canBuffer) {
+        stacker.waiting.push(material.id)
+        material.locationId = stacker.id
+        if (!stacker.busy) {
+          stacker.status = 'queued'
+        }
+        return true
+      }
+      return false
     }
   }
 
@@ -693,9 +855,110 @@ function handleAgvIdle(event: SimulationEvent, engine: SimulationEngine): void {
   dispatchAgvs(engine)
 }
 
-function handleStackerMove(event: SimulationEvent, engine: SimulationEngine): void {
+function handleStackerEnqueue(event: SimulationEvent, engine: SimulationEngine): void {
   const stacker = event.targetId ? engine.world.stackers.get(event.targetId) : undefined
   const jobId = stringField(event.payload, 'jobId')
+  if (!stacker || !jobId) {
+    return
+  }
+  const job = stacker.queue.find((item) => item.id === jobId)
+  if (!job || stacker.activeJobId !== jobId) {
+    return
+  }
+  engine.world.record(
+    event.time,
+    stacker.id,
+    'stacker',
+    EventType.StackerEnqueue,
+    `${stacker.name} enqueued ${job.materialId}`,
+  )
+  scheduleAxisMoves(
+    engine,
+    stacker,
+    event.time,
+    job.pickColumn,
+    job.pickLevel,
+    job.id,
+    EventType.StackerPick,
+  )
+}
+
+function handleStackerMoveX(event: SimulationEvent, engine: SimulationEngine): void {
+  const stacker = event.targetId ? engine.world.stackers.get(event.targetId) : undefined
+  const jobId = stringField(event.payload, 'jobId')
+  const payload = asRecord(event.payload)
+  if (!stacker || !jobId) {
+    return
+  }
+  const toColumn = typeof payload.toColumn === 'number' ? payload.toColumn : stacker.currentColumn
+  stacker.currentColumn = toColumn
+  markStackerStatus(stacker, event.time, 'moving')
+  engine.world.record(
+    event.time,
+    stacker.id,
+    'stacker',
+    EventType.StackerMoveX,
+    `${stacker.name} arrived column ${toColumn}`,
+  )
+
+  const remainingY = payload.remainingY === true
+  const afterType =
+    payload.afterType === EventType.StackerDrop ? EventType.StackerDrop : EventType.StackerPick
+  const toLevel = typeof payload.toLevel === 'number' ? payload.toLevel : stacker.currentLevel
+
+  if (remainingY) {
+    const dy = moveTimeY(stacker, stacker.currentLevel, toLevel)
+    engine.scheduleEvent({
+      time: event.time + dy,
+      type: EventType.StackerMoveY,
+      targetId: stacker.id,
+      payload: { jobId, toColumn, toLevel, afterType, remainingX: false },
+    })
+    return
+  }
+
+  engine.scheduleEvent({
+    time: event.time,
+    type: afterType,
+    targetId: stacker.id,
+    payload: { jobId },
+    priority: 1,
+  })
+}
+
+function handleStackerMoveY(event: SimulationEvent, engine: SimulationEngine): void {
+  const stacker = event.targetId ? engine.world.stackers.get(event.targetId) : undefined
+  const jobId = stringField(event.payload, 'jobId')
+  const payload = asRecord(event.payload)
+  if (!stacker || !jobId) {
+    return
+  }
+  const toLevel = typeof payload.toLevel === 'number' ? payload.toLevel : stacker.currentLevel
+  stacker.currentLevel = toLevel
+  markStackerStatus(stacker, event.time, 'moving')
+  engine.world.record(
+    event.time,
+    stacker.id,
+    'stacker',
+    EventType.StackerMoveY,
+    `${stacker.name} arrived level ${toLevel}`,
+  )
+
+  const afterType =
+    payload.afterType === EventType.StackerDrop ? EventType.StackerDrop : EventType.StackerPick
+  engine.scheduleEvent({
+    time: event.time,
+    type: afterType,
+    targetId: stacker.id,
+    payload: { jobId },
+    priority: 1,
+  })
+}
+
+function handleStackerPick(event: SimulationEvent, engine: SimulationEngine): void {
+  const stacker = event.targetId ? engine.world.stackers.get(event.targetId) : undefined
+  const jobId = stringField(event.payload, 'jobId')
+  const payload = asRecord(event.payload)
   if (!stacker || !jobId) {
     return
   }
@@ -703,17 +966,89 @@ function handleStackerMove(event: SimulationEvent, engine: SimulationEngine): vo
   if (!job) {
     return
   }
-  stacker.currentColumn = job.column
-  stacker.currentLevel = job.level
+
+  if (payload.pickDone === true) {
+    beginTravelToDrop(engine, stacker, job, event.time)
+    return
+  }
+
+  markStackerStatus(stacker, event.time, 'picking')
+  job.phase = 'picking'
+  engine.world.record(
+    event.time,
+    stacker.id,
+    'stacker',
+    EventType.StackerPick,
+    `${stacker.name} picking ${job.materialId}`,
+  )
   engine.scheduleEvent({
     time: event.time + stacker.forkTime,
-    type: EventType.StackerFork,
+    type: EventType.StackerPick,
     targetId: stacker.id,
-    payload: { jobId: job.id },
+    payload: { jobId, pickDone: true },
   })
 }
 
-function handleStackerFork(event: SimulationEvent, engine: SimulationEngine): void {
+function beginTravelToDrop(
+  engine: SimulationEngine,
+  stacker: StackerRuntime,
+  job: StackerJob,
+  time: number,
+): void {
+  job.phase = 'to_drop'
+  scheduleAxisMoves(
+    engine,
+    stacker,
+    time,
+    job.column,
+    job.level,
+    job.id,
+    EventType.StackerDrop,
+  )
+}
+
+function handleStackerDrop(event: SimulationEvent, engine: SimulationEngine): void {
+  const stacker = event.targetId ? engine.world.stackers.get(event.targetId) : undefined
+  const jobId = stringField(event.payload, 'jobId')
+  const payload = asRecord(event.payload)
+  if (!stacker || !jobId) {
+    return
+  }
+  const job = stacker.queue.find((item) => item.id === jobId)
+  if (!job) {
+    return
+  }
+
+  if (payload.dropDone === true) {
+    engine.scheduleEvent({
+      time: event.time,
+      type: EventType.StackerComplete,
+      targetId: stacker.id,
+      payload: { jobId },
+      priority: 1,
+    })
+    return
+  }
+
+  // Arrived at drop coordinates (from MOVE_X/Y) → perform fork drop.
+  job.phase = 'dropping'
+  markStackerStatus(stacker, event.time, 'dropping')
+  engine.world.record(
+    event.time,
+    stacker.id,
+    'stacker',
+    EventType.StackerDrop,
+    `${stacker.name} dropping ${job.materialId} at C${job.column} L${job.level}`,
+  )
+  engine.scheduleEvent({
+    time: event.time + stacker.forkTime,
+    type: EventType.StackerDrop,
+    targetId: stacker.id,
+    payload: { jobId, dropDone: true },
+  })
+}
+
+function handleStackerComplete(event: SimulationEvent, engine: SimulationEngine): void {
   const stacker = event.targetId ? engine.world.stackers.get(event.targetId) : undefined
   const jobId = stringField(event.payload, 'jobId')
   if (!stacker || !jobId) {
@@ -724,25 +1059,53 @@ function handleStackerFork(event: SimulationEvent, engine: SimulationEngine): vo
   if (!job) {
     return
   }
-  const rack = stacker.rackId ? engine.world.racks.get(stacker.rackId) : [...engine.world.racks.values()][0]
-  if (rack) {
-    const slot = rack.locations.find((location) => location.column === job.column && location.level === job.level)
-    if (slot) {
-      slot.occupied = job.kind === 'inbound'
+
+  const material = engine.world.materials.get(job.materialId)
+  stacker.queue.splice(jobIndex, 1)
+  stacker.activeJobId = undefined
+  stacker.completedCount += 1
+  job.phase = 'complete'
+
+  if (job.kind === 'inbound') {
+    const rack = stacker.rackId ? engine.world.racks.get(stacker.rackId) : undefined
+    if (rack) {
+      const slot = rack.locations.find(
+        (location) => location.column === job.column && location.level === job.level,
+      )
+      if (slot) {
+        slot.occupied = true
+      }
+    }
+    if (material) {
+      completeMaterial(engine, material, event.time)
+    } else {
+      engine.world.completedCount += 1
+    }
+  } else if (material) {
+    if (!deliver(engine, stacker.id, material, event.time)) {
+      stacker.waiting.push(material.id)
     }
   }
-  stacker.queue.splice(jobIndex, 1)
-  stacker.completedCount += 1
+
   markStackerBusy(stacker, event.time, false)
-  engine.world.completedCount += 1
   engine.world.record(
     event.time,
     stacker.id,
     'stacker',
-    EventType.StackerFork,
-    `${stacker.name} finished ${job.kind} at C${job.column} L${job.level}`,
+    EventType.StackerComplete,
+    `${stacker.name} completed ${job.kind} ${job.materialId}`,
   )
+  pullWaitingIntoStacker(engine, stacker, event.time)
   startStackerIfIdle(engine, stacker, event.time)
+}
+
+/** Legacy alias: combined move → fork. */
+function handleStackerMove(event: SimulationEvent, engine: SimulationEngine): void {
+  handleStackerMoveX(event, engine)
+}
+
+function handleStackerFork(event: SimulationEvent, engine: SimulationEngine): void {
+  handleStackerDrop(event, engine)
 }
 
 function handleDispatch(event: SimulationEvent, engine: SimulationEngine): void {
@@ -775,6 +1138,12 @@ export function registerHandlers(engine: SimulationEngine): void {
   engine.register(EventType.AgvRouteAvailable, handleAgvRouteAvailable)
   engine.register(EventType.TaskCompleted, handleTaskCompleted)
   engine.register(EventType.AgvIdle, handleAgvIdle)
+  engine.register(EventType.StackerEnqueue, handleStackerEnqueue)
+  engine.register(EventType.StackerMoveX, handleStackerMoveX)
+  engine.register(EventType.StackerMoveY, handleStackerMoveY)
+  engine.register(EventType.StackerPick, handleStackerPick)
+  engine.register(EventType.StackerDrop, handleStackerDrop)
+  engine.register(EventType.StackerComplete, handleStackerComplete)
   engine.register(EventType.StackerMove, handleStackerMove)
   engine.register(EventType.StackerFork, handleStackerFork)
   engine.register(EventType.Dispatch, handleDispatch)

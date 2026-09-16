@@ -164,6 +164,32 @@ export function asrsScenario(): ProjectDocument {
   }
 }
 
+/** Source → Stacker → Sink transfer line (no rack). */
+export function stackerSinkScenario(totalCount = 10): ProjectDocument {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    project: { name: 'Source-Stacker-Sink', version: 2 },
+    devices: [
+      device('source-1', DeviceType.Source, 'Source-01', 80, 180, {
+        generationInterval: 5,
+        totalCount,
+      }),
+      device('stacker-1', DeviceType.Stacker, 'Stacker-01', 280, 180, {
+        horizontalSpeed: 2,
+        verticalSpeed: 1,
+        forkTime: 1,
+        bayWidth: 1.2,
+        levelHeight: 1.5,
+      }),
+      device('sink-1', DeviceType.Sink, 'Sink-01', 480, 180),
+    ],
+    nodes: [],
+    edges: [flow('flow-1', 'source-1', 'stacker-1'), flow('flow-2', 'stacker-1', 'sink-1')],
+    tasks: [],
+    simulationConfig: { seed: 1, taskCount: 0, taskInterval: 0, enableTraffic: true },
+  }
+}
+
 /**
  * Standard validation warehouse for V0.2 experiments:
  * 2 pickup stations, 2 dropoff stations, mid stations, stacker/rack spur,

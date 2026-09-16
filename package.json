@@ -7,13 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:pages": "tsc -b && VITE_BASE=/test_cursor_app/ vite build --outDir docs --emptyOutDir && cp docs/index.html docs/404.html && touch docs/.nojekyll",
-    "lint": "oxlint",
+    "lint": "oxlint src",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "antd": "^5.27.4",
+    "antd": "^6.6.4",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
     "react": "^19.2.8",

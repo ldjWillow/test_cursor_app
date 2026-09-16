@@ -156,6 +156,9 @@ export default function SimulationPanel() {
   const experimentSummaries = useSimulationStore((state) => state.experimentSummaries)
   const lastError = useSimulationStore((state) => state.lastError)
   const validationErrors = useSimulationStore((state) => state.validationErrors)
+  const resultsStale = useSimulationStore((state) => state.resultsStale)
+  const modelStaleMessage = useSimulationStore((state) => state.modelStaleMessage)
+  const status = useSimulationStore((state) => state.status)
   const document = useProjectStore((state) => state.document)
   const replaceTasks = useProjectStore((state) => state.replaceTasks)
   const stations = document.devices.filter(
@@ -169,15 +172,27 @@ export default function SimulationPanel() {
     () => stations.map((station) => ({ value: station.id, label: station.name })),
     [stations],
   )
+  const editingLocked = status === 'running'
+  const metricsDimmed = resultsStale
 
   return (
     <footer className="simulation-panel">
-      <div className="sim-metrics">
+      {resultsStale && (
+        <div className="sim-stale-banner">{modelStaleMessage ?? '模型已修改，请重置或重新运行'}</div>
+      )}
+      <div className={`sim-metrics${metricsDimmed ? ' sim-metrics-stale' : ''}`}>
         <Metric label="Simulation Time" value={`${round(snapshot.time, 2)} s`} />
         <Metric label="Waiting Tasks" value={String(snapshot.waitingTasks)} />
         <Metric label="Running Tasks" value={String(snapshot.runningTasks)} />
         <Metric label="Completed Tasks" value={String(snapshot.completedTasks)} />
-        <Metric label="Throughput" value={`${round(stats.throughput, 2)} /h`} />
+        <Metric
+          label="AGV Task Throughput"
+          value={`${round(stats.agvTaskThroughput, 2)} tasks/h`}
+        />
+        <Metric
+          label="Material Throughput"
+          value={`${round(stats.materialThroughput, 2)} mats/h`}
+        />
         <Metric label="Avg Wait" value={`${round(stats.averageWaitingTime, 2)} s`} />
         <Metric label="Route Wait" value={`${round(stats.routeWaitingTime, 2)} s`} />
         <Metric label="Empty Travel" value={`${round(stats.emptyTravelRatio * 100, 1)}%`} />
@@ -195,7 +210,7 @@ export default function SimulationPanel() {
               <div className="sim-columns">
                 <section>
                   <div className="panel-title">Event Queue</div>
-                  <div className="event-list">
+                  <div className={`event-list${metricsDimmed ? ' sim-metrics-stale' : ''}`}>
                     {snapshot.eventQueue.length === 0 && <div className="panel-hint">Empty</div>}
                     {snapshot.eventQueue.slice(0, 8).map((event) => (
                       <div key={event.id}>
@@ -208,12 +223,14 @@ export default function SimulationPanel() {
 
                 <section>
                   <div className="panel-title">Bottlenecks</div>
-                  {stats.bottlenecks.length === 0 && <div className="panel-hint">None</div>}
-                  {stats.bottlenecks.map((item) => (
-                    <div key={`${item.id}-${item.reason}`}>
-                      {item.name}: {item.reason}
-                    </div>
-                  ))}
+                  <div className={metricsDimmed ? 'sim-metrics-stale' : undefined}>
+                    {stats.bottlenecks.length === 0 && <div className="panel-hint">None</div>}
+                    {stats.bottlenecks.map((item) => (
+                      <div key={`${item.id}-${item.reason}`}>
+                        {item.name}: {item.reason}
+                      </div>
+                    ))}
+                  </div>
                   <div className="panel-title" style={{ marginTop: 8 }}>
                     Waiting breakdown
                   </div>
@@ -241,6 +258,7 @@ export default function SimulationPanel() {
                       placeholder="Pickup"
                       options={options}
                       value={sourceId}
+                      disabled={editingLocked}
                       onChange={setSourceId}
                       style={{ width: 120 }}
                     />
@@ -249,6 +267,7 @@ export default function SimulationPanel() {
                       placeholder="Dropoff"
                       options={options}
                       value={targetId}
+                      disabled={editingLocked}
                       onChange={setTargetId}
                       style={{ width: 120 }}
                     />
@@ -257,11 +276,13 @@ export default function SimulationPanel() {
                       min={1}
                       max={5000}
                       value={taskCount}
+                      disabled={editingLocked}
                       onChange={(value) => setTaskCount(typeof value === 'number' ? value : 100)}
                     />
                     <Button
                       size="small"
-                      disabled={!sourceId || !targetId}
+                      disabled={!sourceId || !targetId || editingLocked}
+                      title={editingLocked ? '仿真运行中，请先 Pause 或 Reset' : undefined}
                       onClick={() => {
                         if (sourceId && targetId) {
                           replaceTasks(sourceId, targetId, taskCount)
@@ -275,7 +296,7 @@ export default function SimulationPanel() {
                 </section>
 
                 <section className="comparison-section">
-                  <div className="panel-title">AGV comparison</div>
+                  <div className="panel-title">AGV comparison (current model snapshot)</div>
                   <Table
                     size="small"
                     pagination={false}
@@ -283,6 +304,18 @@ export default function SimulationPanel() {
                     dataSource={comparison}
                     columns={[
                       { title: 'AGVs', dataIndex: 'agvCount', width: 60 },
+                      {
+                        title: 'Tasks',
+                        dataIndex: 'taskCount',
+                        width: 70,
+                        render: (value?: number) => value ?? document.tasks.length,
+                      },
+                      {
+                        title: 'Hash',
+                        dataIndex: 'scenarioHash',
+                        width: 90,
+                        render: (value?: string) => value ?? '—',
+                      },
                       {
                         title: 'Throughput /h',
                         dataIndex: 'throughput',
@@ -307,6 +340,10 @@ export default function SimulationPanel() {
                         title: 'Empty %',
                         dataIndex: 'emptyTravelRatio',
                         render: (value?: number) => round((value ?? 0) * 100, 1),
+                      },
+                      {
+                        title: 'Completed',
+                        dataIndex: 'completedTasks',
                       },
                       {
                         title: 'Cycle s',
@@ -369,8 +406,56 @@ export default function SimulationPanel() {
             label: 'AGV Timeline',
             children: <TimelinePanel />,
           },
+          {
+            key: 'edges',
+            label: 'Edges',
+            children: <EdgeListPanel />,
+          },
         ]}
       />
     </footer>
+  )
+}
+
+function EdgeListPanel() {
+  const document = useProjectStore((state) => state.document)
+  const selectedId = useProjectStore((state) => state.selectedId)
+  const setSelection = useProjectStore((state) => state.setSelection)
+  const [query, setQuery] = useState('')
+  const filtered = document.edges.filter((edge) => {
+    const q = query.trim().toLowerCase()
+    if (!q) {
+      return true
+    }
+    return (
+      edge.id.toLowerCase().includes(q) ||
+      edge.from.toLowerCase().includes(q) ||
+      edge.to.toLowerCase().includes(q)
+    )
+  })
+  return (
+    <div>
+      <div className="task-config" style={{ marginBottom: 6 }}>
+        <input
+          className="edge-search"
+          placeholder="Search edge id / from / to"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <span className="panel-hint">{filtered.length} edges</span>
+      </div>
+      <div className="event-list log-scroll">
+        {filtered.map((edge) => (
+          <button
+            key={edge.id}
+            type="button"
+            className={`edge-list-item${selectedId === edge.id ? ' selected' : ''}`}
+            onClick={() => setSelection(edge.id, 'edge')}
+          >
+            <strong>{edge.id}</strong> · {edge.from} → {edge.to} · {edge.kind}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }

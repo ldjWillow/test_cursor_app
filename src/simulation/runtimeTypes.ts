@@ -130,6 +130,16 @@ export interface RackRuntime {
   nodeId: string
 }
 
+export const StackerStatus = {
+  Idle: 'idle',
+  Queued: 'queued',
+  Moving: 'moving',
+  Picking: 'picking',
+  Dropping: 'dropping',
+} as const
+
+export type StackerStatus = (typeof StackerStatus)[keyof typeof StackerStatus]
+
 export interface StackerRuntime {
   id: string
   name: string
@@ -140,10 +150,16 @@ export interface StackerRuntime {
   bayWidth: number
   levelHeight: number
   rackId?: string
+  /** Enabled flow out-edges (sink / conveyor / rack). */
+  downstreamIds: string[]
   currentColumn: number
   currentLevel: number
   queue: StackerJob[]
+  /** Material ids waiting because no free rack slot / downstream. */
+  waiting: string[]
+  activeJobId?: string
   busy: boolean
+  status: StackerStatus
   busyTime: number
   idleTime: number
   blockedTime: number
@@ -158,10 +174,16 @@ export interface StackerRuntime {
 
 export interface StackerJob {
   id: string
-  kind: 'inbound' | 'outbound'
+  kind: 'inbound' | 'outbound' | 'transfer'
+  materialId: string
+  /** Pickup bay coordinates (I/O). */
+  pickColumn: number
+  pickLevel: number
+  /** Drop bay coordinates (rack slot or transfer bay). */
   column: number
   level: number
   createdTime: number
+  phase: 'to_pick' | 'picking' | 'to_drop' | 'dropping' | 'complete'
 }
 
 export interface TaskRuntime {

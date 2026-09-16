@@ -1,8 +1,8 @@
 import type { AgvComparisonRow, ExperimentResult, ProjectDocument, ReplicationSummary } from '../types/index.ts'
-import { agvScenario } from '../domain/base/scenarios.ts'
 import { createEngine } from './SimulationEngine.ts'
 import { experimentManager, defaultExperiment } from '../experiment/ExperimentManager.ts'
 import { defaultAgvScenarios } from '../experiment/scenarioOverrides.ts'
+import { scenarioHash } from '../utils/scenarioHash.ts'
 
 export function runProjectToCompletion(project: ProjectDocument) {
   const engine = createEngine(project)
@@ -10,18 +10,23 @@ export function runProjectToCompletion(project: ProjectDocument) {
   return engine.getState()
 }
 
+/**
+ * Compare AGV fleet sizes against a full snapshot of the current model
+ * (tasks, topology, params, seed). Each scenario runs in an isolated engine.
+ */
 export function compareAgvCounts(
+  base: ProjectDocument,
   counts: number[] = [3, 4, 5, 6],
-  taskCount = 100,
 ): AgvComparisonRow[] {
-  const base = agvScenario(3, taskCount)
+  const hash = scenarioHash(base)
+  const taskCount = base.simulationConfig.taskCount || base.tasks.length
   const definition = {
     ...defaultExperiment(),
     scenarios: defaultAgvScenarios(counts),
     replications: 1,
     baseSeed: base.simulationConfig.seed,
   }
-  const { summaries } = experimentManager.runExperiment(base, definition)
+  const { summaries } = experimentManager.runExperiment(structuredClone(base), definition)
   return summaries.map((summary) => ({
     agvCount: summary.agvCount,
     throughput: summary.throughput.mean,
@@ -32,6 +37,9 @@ export function compareAgvCounts(
     simulationTime: summary.results[0]?.simulationTime ?? 0,
     emptyTravelRatio: summary.emptyTravelRatio.mean,
     routeWaitingTime: summary.routeWaitingTime.mean,
+    taskCount,
+    scenarioHash: hash,
+    seed: base.simulationConfig.seed,
   }))
 }
 
@@ -41,7 +49,7 @@ export function runAgvExperiment(
   replications = 1,
   baseSeed = 1001,
 ): { results: ExperimentResult[]; summaries: ReplicationSummary[] } {
-  return experimentManager.runExperiment(base, {
+  return experimentManager.runExperiment(structuredClone(base), {
     id: 'exp-agv-count',
     name: 'AGV count experiment',
     scenarios: defaultAgvScenarios(counts),

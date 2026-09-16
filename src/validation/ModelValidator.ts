@@ -137,6 +137,41 @@ export class ModelValidator {
             entityId: device.id,
           })
         }
+        const outEdges = flowEdges.filter((edge) => edge.from === device.id)
+        const inEdges = flowEdges.filter((edge) => edge.to === device.id)
+        // Path-only stackers (AGV waypoints) may have zero flow edges.
+        // Partial material-flow wiring must be complete and supported.
+        if (inEdges.length + outEdges.length > 0) {
+          if (inEdges.length === 0) {
+            issues.push({
+              code: 'STACKER_NO_IN',
+              message: `${device.name} has no inbound flow edge`,
+              entityId: device.id,
+            })
+          }
+          if (outEdges.length === 0) {
+            issues.push({
+              code: 'STACKER_NO_OUT',
+              message: `${device.name} has no outbound flow edge (requires Rack, Sink, or Conveyor)`,
+              entityId: device.id,
+            })
+          }
+          for (const edge of outEdges) {
+            const target = project.devices.find((item) => item.id === edge.to)
+            if (
+              target &&
+              target.type !== DeviceType.Rack &&
+              target.type !== DeviceType.Sink &&
+              target.type !== DeviceType.Conveyor
+            ) {
+              issues.push({
+                code: 'STACKER_UNSUPPORTED_OUT',
+                message: `${device.name} outbound to unsupported device type ${target.type}`,
+                entityId: device.id,
+              })
+            }
+          }
+        }
       }
     }
 

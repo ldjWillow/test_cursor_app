@@ -24,7 +24,15 @@ export const EventType = {
   AgvRouteAvailable: 'AGV_ROUTE_AVAILABLE',
   TaskCompleted: 'TASK_COMPLETED',
   AgvIdle: 'AGV_IDLE',
+  StackerEnqueue: 'STACKER_ENQUEUE',
+  StackerMoveX: 'STACKER_MOVE_X',
+  StackerMoveY: 'STACKER_MOVE_Y',
+  StackerPick: 'STACKER_PICK',
+  StackerDrop: 'STACKER_DROP',
+  StackerComplete: 'STACKER_COMPLETE',
+  /** @deprecated kept for migration compatibility; routed to MOVE_X/MOVE_Y handlers */
   StackerMove: 'STACKER_MOVE',
+  /** @deprecated kept for migration compatibility; routed to DROP handler */
   StackerFork: 'STACKER_FORK',
   Dispatch: 'DISPATCH',
 } as const

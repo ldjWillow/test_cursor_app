@@ -35,11 +35,14 @@ describe('AGV transport', () => {
     expect(types).toContain(EventType.AgvIdle)
   })
 
-  it('compares 3, 4, 5 and 6 AGVs', () => {
-    const rows = compareAgvCounts([3, 4, 5, 6], 100)
+  it('compares 3, 4, 5 and 6 AGVs using the current model snapshot', () => {
+    const base = agvScenario(3, 100)
+    const rows = compareAgvCounts(base, [3, 4, 5, 6])
     expect(rows).toHaveLength(4)
     for (const row of rows) {
       expect(row.completedTasks).toBe(100)
+      expect(row.taskCount).toBe(100)
+      expect(row.scenarioHash).toBeTruthy()
       expect(row.throughput).toBeGreaterThan(0)
     }
     expect(rows[3]?.simulationTime).toBeLessThanOrEqual(rows[0]?.simulationTime ?? 0)

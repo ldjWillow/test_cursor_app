@@ -55,9 +55,9 @@ function closeConveyor(conveyor: ConveyorRuntime, now: number): void {
 
 function closeStacker(stacker: StackerRuntime, now: number): void {
   const dt = Math.max(0, now - stacker.lastStatusChange)
-  if (stacker.busy) {
+  if (stacker.busy || stacker.status === 'moving' || stacker.status === 'picking' || stacker.status === 'dropping') {
     stacker.busyTime += dt
-  } else if (stacker.queue.length > 0) {
+  } else if (stacker.queue.length > 0 || stacker.waiting.length > 0) {
     stacker.blockedTime += dt
   } else {
     stacker.idleTime += dt
@@ -165,8 +165,10 @@ export class StatisticsEngine {
     }
 
     const hours = now / 3600
-    const completedMaterialOrTasks = Math.max(world.completedCount, world.completedTasks)
-    const throughput = hours > 0 ? completedMaterialOrTasks / hours : 0
+    const agvTaskThroughput = hours > 0 ? world.completedTasks / hours : 0
+    const materialThroughput = hours > 0 ? world.completedCount / hours : 0
+    // Legacy combined field kept for older charts; never sums mixed units.
+    const throughput = Math.max(agvTaskThroughput, materialThroughput)
     const averageWaitingTime =
       world.completedWaitSamples > 0 ? world.waitingTimeTotal / world.completedWaitSamples : 0
     const averageCycleTime =
@@ -199,6 +201,8 @@ export class StatisticsEngine {
 
     return {
       throughput,
+      agvTaskThroughput,
+      materialThroughput,
       completedTasks: world.completedTasks,
       failedTasks: world.failedTasks,
       generatedCount: world.generatedCount,
@@ -242,4 +246,19 @@ export function markConveyorOccupancy(conveyor: ConveyorRuntime, now: number): v
 export function markStackerBusy(stacker: StackerRuntime, now: number, busy: boolean): void {
   closeStacker(stacker, now)
   stacker.busy = busy
+  if (!busy && stacker.queue.length === 0 && stacker.waiting.length === 0) {
+    stacker.status = 'idle'
+  } else if (!busy) {
+    stacker.status = 'queued'
+  }
+}
+
+export function markStackerStatus(
+  stacker: StackerRuntime,
+  now: number,
+  status: StackerRuntime['status'],
+): void {
+  closeStacker(stacker, now)
+  stacker.status = status
+  stacker.busy = status === 'moving' || status === 'picking' || status === 'dropping'
 }

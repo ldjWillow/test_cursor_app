@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Connection, Edge, Node } from 'reactflow'
+import { MarkerType } from 'reactflow'
 import {
   DeviceType,
   EdgeKind,
@@ -18,6 +19,9 @@ import { agvScenario, emptyProject } from '../domain/base/scenarios.ts'
 import { ensureSchemaVersion } from '../persistence/migrate.ts'
 import { createUuid } from '../utils/id.ts'
 import { distance } from '../utils/math.ts'
+import { useSimulationStore } from './simulationStore.ts'
+import { simulationRuntime } from '../simulation/SimulationRuntime.ts'
+import { SimulationStatus } from '../types/index.ts'
 
 const HISTORY_LIMIT = 50
 
@@ -64,18 +68,33 @@ function toRfNode(device: PlacedDevice): Node {
   }
 }
 
-function toRfEdge(edge: ProjectEdge): Edge {
+function toRfEdge(edge: ProjectEdge, allEdges: ProjectEdge[]): Edge {
+  const reverse = allEdges.find(
+    (item) => item.id !== edge.id && item.from === edge.to && item.to === edge.from,
+  )
+  const isForward = !reverse || edge.id < reverse.id
+  const offset = reverse ? (isForward ? 1 : -1) : 0
   return {
     id: edge.id,
     source: edge.from,
     target: edge.to,
-    type: 'smoothstep',
+    type: 'offset',
     animated: edge.kind === EdgeKind.Flow,
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: edge.kind === EdgeKind.Flow ? '#3ecf8e' : '#6ea8fe',
+      width: 18,
+      height: 18,
+    },
     style: {
       stroke: edge.kind === EdgeKind.Flow ? '#3ecf8e' : '#6ea8fe',
       strokeWidth: 2,
     },
-    data: { kind: edge.kind },
+    data: {
+      kind: edge.kind,
+      offset,
+      label: edge.id,
+    },
   }
 }
 
@@ -84,7 +103,7 @@ function syncFromDocument(document: ProjectDocument): Pick<ProjectStore, 'docume
   return {
     document: normalized,
     nodes: normalized.devices.map(toRfNode),
-    edges: normalized.edges.map(toRfEdge),
+    edges: normalized.edges.map((edge) => toRfEdge(edge, normalized.edges)),
   }
 }
 
@@ -125,6 +144,15 @@ function pushHistory(
     revision: get().revision + 1,
     ...extra,
   })
+  onModelMutated()
+}
+
+function onModelMutated(): void {
+  const sim = useSimulationStore.getState()
+  if (sim.status === SimulationStatus.Running) {
+    simulationRuntime.pause()
+  }
+  sim.invalidateResults()
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -145,6 +173,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       future: [],
       revision: get().revision + 1,
     })
+    onModelMutated()
   },
 
   newProject: () => {
@@ -341,6 +370,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       selectedId: null,
       selectedKind: null,
     })
+    onModelMutated()
   },
 
   redo: () => {
@@ -357,6 +387,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       selectedId: null,
       selectedKind: null,
     })
+    onModelMutated()
   },
 
   copySelected: () => {

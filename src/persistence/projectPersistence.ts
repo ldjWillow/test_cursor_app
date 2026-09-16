@@ -54,11 +54,18 @@ export function exportProject(document: ProjectDocument): void {
   URL.revokeObjectURL(url)
 }
 
-export async function importProject(file: File): Promise<ProjectDocument> {
-  const text = await file.text()
+export function exportProjectJson(document: ProjectDocument): string {
+  return JSON.stringify(ensureSchemaVersion(document), null, 2)
+}
+
+export function importProjectJson(text: string): ProjectDocument {
   const parsed: unknown = JSON.parse(text)
   if (!isProjectDocument(parsed)) {
     throw new Error('Invalid WarehouseSim project JSON')
   }
   return migrateProject(parsed)
+}
+
+export async function importProject(file: File): Promise<ProjectDocument> {
+  return importProjectJson(await file.text())
 }

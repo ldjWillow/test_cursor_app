@@ -289,6 +289,31 @@ export class SimulationEngine {
         timeline: agv.timeline.map((segment) => ({ ...segment })),
       })
     }
+
+    // Visual berth offsets: stack AGVs that share the same node so they remain selectable.
+    const byNode = new Map<string, RuntimeDeviceView[]>()
+    for (const view of views) {
+      if (view.type !== DeviceType.Agv) {
+        continue
+      }
+      const agv = this.world.agvs.get(view.id)
+      const key = agv?.nodeId ?? `${Math.round(view.x)}:${Math.round(view.y)}`
+      const list = byNode.get(key) ?? []
+      list.push(view)
+      byNode.set(key, list)
+    }
+    for (const group of byNode.values()) {
+      if (group.length < 2) {
+        continue
+      }
+      group.forEach((view, index) => {
+        const angle = (index / group.length) * Math.PI * 2
+        const radius = 14 + Math.floor(index / 6) * 10
+        view.x += Math.cos(angle) * radius
+        view.y += Math.sin(angle) * radius
+        view.name = `${view.name} (${index + 1}/${group.length})`
+      })
+    }
     for (const rack of this.world.racks.values()) {
       const occupied = rack.locations.filter((location) => location.occupied).length
       views.push({
@@ -307,9 +332,9 @@ export class SimulationEngine {
         id: stacker.id,
         type: DeviceType.Stacker,
         name: stacker.name,
-        status: stacker.busy ? 'busy' : 'idle',
+        status: stacker.status,
         occupancy: stacker.busy ? 1 : 0,
-        queueLength: stacker.queue.length,
+        queueLength: stacker.queue.length + stacker.waiting.length,
         x: stacker.x,
         y: stacker.y,
       })

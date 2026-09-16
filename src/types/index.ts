@@ -329,6 +329,9 @@ export interface AgvComparisonRow {
   simulationTime: number
   emptyTravelRatio?: number
   routeWaitingTime?: number
+  taskCount?: number
+  scenarioHash?: string
+  seed?: number
 }
 
 export interface Bottleneck {
@@ -356,7 +359,12 @@ export interface ResourceStats {
 }
 
 export interface StatisticsSnapshot {
+  /** @deprecated Prefer agvTaskThroughput / materialThroughput — was max(tasks, materials)/hour. */
   throughput: number
+  /** Completed AGV transport tasks per hour over [0, simulationTime]. */
+  agvTaskThroughput: number
+  /** Completed materials per hour over [0, simulationTime]. */
+  materialThroughput: number
   completedTasks: number
   failedTasks: number
   generatedCount: number

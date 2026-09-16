@@ -300,22 +300,23 @@ export function buildWorld(project: ProjectDocument): SimulationWorld {
 
     if (device.type === DeviceType.Stacker) {
       const params = asStacker(device)
-      const rackId = downstream.find((id) => world.racks.has(id)) ??
-        [...world.racks.values()][0]?.id
       world.stackers.set(device.id, {
         id: device.id,
         name: device.name,
         type: DeviceType.Stacker,
         horizontalSpeed: Math.max(0.0001, params.horizontalSpeed),
         verticalSpeed: Math.max(0.0001, params.verticalSpeed),
-        forkTime: params.forkTime,
-        bayWidth: params.bayWidth,
-        levelHeight: params.levelHeight,
-        rackId,
+        forkTime: Math.max(0, params.forkTime),
+        bayWidth: Math.max(0.0001, params.bayWidth),
+        levelHeight: Math.max(0.0001, params.levelHeight),
+        rackId: undefined,
+        downstreamIds: [...downstream],
         currentColumn: 0,
         currentLevel: 0,
         queue: [],
+        waiting: [],
         busy: false,
+        status: 'idle',
         busyTime: 0,
         idleTime: 0,
         blockedTime: 0,
@@ -328,6 +329,12 @@ export function buildWorld(project: ProjectDocument): SimulationWorld {
         nodeId: device.id,
       })
     }
+  }
+
+  // Resolve rack bindings after all racks exist (device order is not guaranteed).
+  for (const stacker of world.stackers.values()) {
+    const rackFromEdge = stacker.downstreamIds.find((id) => world.racks.has(id))
+    stacker.rackId = rackFromEdge ?? [...world.racks.values()][0]?.id
   }
 
   for (const task of project.tasks) {
