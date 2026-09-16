@@ -32,10 +32,14 @@ function CanvasInner() {
   const addDevice = useProjectStore((state) => state.addDevice)
   const setSelection = useProjectStore((state) => state.setSelection)
   const snapshot = useSimulationStore((state) => state.snapshot)
+  const simStatus = useSimulationStore((state) => state.status)
   const { screenToFlowPosition } = useReactFlow()
 
   const displayNodes = useMemo(() => {
-    if (snapshot.devices.length === 0) {
+    if (
+      snapshot.devices.length === 0 ||
+      simStatus === SimulationStatus.Idle
+    ) {
       return nodes
     }
     const byId = new Map(snapshot.devices.map((device) => [device.id, device]))
@@ -49,7 +53,7 @@ function CanvasInner() {
         position: { x: runtime.x, y: runtime.y },
       }
     })
-  }, [nodes, snapshot.devices])
+  }, [nodes, snapshot.devices, simStatus])
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
