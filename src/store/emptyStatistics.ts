@@ -16,6 +16,15 @@ export function emptyStatistics(): StatisticsSnapshot {
     idleTime: 0,
     busyTime: 0,
     averageQueueLength: 0,
+    waiting: {
+      taskWaitingTime: 0,
+      routeWaitingTime: 0,
+      resourceWaitingTime: 0,
+      loadingWaitingTime: 0,
+    },
+    emptyTravelRatio: 0,
+    routeWaitingTime: 0,
+    agvKpis: [],
     resources: [],
     bottlenecks: [],
   }

@@ -1,6 +1,8 @@
 import type { ProjectDocument } from '../types/index.ts'
+import { ensureSchemaVersion, migrateProject } from './migrate.ts'
 
-const STORAGE_KEY = 'warehousesim.project.v1'
+const STORAGE_KEY = 'warehousesim.project.v2'
+const LEGACY_STORAGE_KEY = 'warehousesim.project.v1'
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -21,28 +23,33 @@ export function isProjectDocument(value: unknown): value is ProjectDocument {
 }
 
 export function saveProject(document: ProjectDocument): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(document))
+  const normalized = ensureSchemaVersion(document)
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
 }
 
 export function loadProject(): ProjectDocument | undefined {
-  const raw = localStorage.getItem(STORAGE_KEY)
+  const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
   if (!raw) {
     return undefined
   }
   try {
     const parsed: unknown = JSON.parse(raw)
-    return isProjectDocument(parsed) ? parsed : undefined
+    if (!isProjectDocument(parsed)) {
+      return undefined
+    }
+    return migrateProject(parsed)
   } catch {
     return undefined
   }
 }
 
 export function exportProject(document: ProjectDocument): void {
-  const blob = new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' })
+  const normalized = ensureSchemaVersion(document)
+  const blob = new Blob([JSON.stringify(normalized, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const anchor = window.document.createElement('a')
   anchor.href = url
-  anchor.download = `${document.project.name.replace(/\s+/g, '-').toLowerCase()}.json`
+  anchor.download = `${normalized.project.name.replace(/\s+/g, '-').toLowerCase()}.json`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -53,5 +60,5 @@ export async function importProject(file: File): Promise<ProjectDocument> {
   if (!isProjectDocument(parsed)) {
     throw new Error('Invalid WarehouseSim project JSON')
   }
-  return parsed
+  return migrateProject(parsed)
 }

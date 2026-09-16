@@ -25,6 +25,7 @@ export const AgvStatus = {
   Idle: 'IDLE',
   Assigned: 'ASSIGNED',
   MovingToPickup: 'MOVING_TO_PICKUP',
+  WaitingForRoute: 'WAITING_FOR_ROUTE',
   Loading: 'LOADING',
   MovingToDropoff: 'MOVING_TO_DROPOFF',
   Unloading: 'UNLOADING',
@@ -59,6 +60,8 @@ export const SimulationSpeed = {
 } as const
 
 export type SimulationSpeed = (typeof SimulationSpeed)[keyof typeof SimulationSpeed]
+
+export const SCHEMA_VERSION = '0.2' as const
 
 export interface SourceParams {
   generationInterval: number
@@ -147,6 +150,10 @@ export interface ProjectEdge {
   distance: number
   maxSpeed: number
   enabled: boolean
+  /** Single-lane by default; future multi-capacity roads. */
+  capacity?: number
+  reservedBy?: string
+  occupiedBy?: string
 }
 
 export interface TransportTask {
@@ -162,6 +169,27 @@ export interface TransportTask {
   agvId?: string
 }
 
+export type TaskGenerationMode = 'fixed' | 'exponential' | 'demand'
+
+export interface DemandPeriod {
+  startTime: number
+  endTime: number
+  tasksPerHour: number
+}
+
+export interface TaskGeneratorConfig {
+  mode: TaskGenerationMode
+  /** Seconds between tasks when mode = fixed. */
+  interval: number
+  sourceId?: string
+  targetId?: string
+  startTime: number
+  endTime?: number
+  /** Max tasks to generate (0 = unlimited until endTime). */
+  maxTasks?: number
+  demandProfile?: DemandPeriod[]
+}
+
 export interface SimulationConfig {
   untilTime?: number
   seed: number
@@ -169,9 +197,115 @@ export interface SimulationConfig {
   taskSourceId?: string
   taskTargetId?: string
   taskInterval: number
+  taskGenerator?: TaskGeneratorConfig
+  /** When true, AGV hops check TrafficManager reservations. */
+  enableTraffic?: boolean
+}
+
+export interface ScenarioOverrides {
+  agvCount?: number
+  taskCount?: number
+  taskGenerationRate?: number
+  agvSpeed?: number
+  stackerSpeed?: number
+  seed?: number
+  enableTraffic?: boolean
+  taskInterval?: number
+  untilTime?: number
+}
+
+export interface ScenarioDefinition {
+  id: string
+  name: string
+  overrides: ScenarioOverrides
+}
+
+export interface ExperimentDefinition {
+  id: string
+  name: string
+  baseProjectName?: string
+  scenarios: ScenarioDefinition[]
+  replications: number
+  baseSeed: number
+}
+
+export interface WaitingStatistics {
+  taskWaitingTime: number
+  routeWaitingTime: number
+  resourceWaitingTime: number
+  loadingWaitingTime: number
+}
+
+export interface ResourceStatistics {
+  busyTime: number
+  idleTime: number
+  blockedTime: number
+  waitingTime: number
+  faultTime: number
+  utilization: number
+  completedCount: number
+}
+
+export interface AgvKpi {
+  id: string
+  name: string
+  travelDistance: number
+  loadedTravelDistance: number
+  emptyTravelDistance: number
+  emptyTravelRatio: number
+  taskCount: number
+  routeWaitingTime: number
+  utilization: number
+}
+
+export interface ExperimentResult {
+  scenarioId: string
+  scenarioName: string
+  agvCount: number
+  seed: number
+  replication: number
+  throughput: number
+  averageWaitingTime: number
+  averageCycleTime: number
+  completedTasks: number
+  agvUtilization: number
+  conveyorUtilization: number
+  stackerUtilization: number
+  emptyTravelRatio: number
+  routeWaitingTime: number
+  waiting: WaitingStatistics
+  simulationTime: number
+  bottlenecks: Bottleneck[]
+}
+
+export interface ReplicationSummary {
+  scenarioId: string
+  scenarioName: string
+  agvCount: number
+  replications: number
+  throughput: { mean: number; std: number; min: number; max: number }
+  averageWaitingTime: { mean: number; std: number; min: number; max: number }
+  averageCycleTime: { mean: number; std: number; min: number; max: number }
+  agvUtilization: { mean: number; std: number; min: number; max: number }
+  routeWaitingTime: { mean: number; std: number; min: number; max: number }
+  emptyTravelRatio: { mean: number; std: number; min: number; max: number }
+  completedTasks: { mean: number; std: number; min: number; max: number }
+  results: ExperimentResult[]
+}
+
+export interface ScenarioDelta {
+  fromScenarioId: string
+  toScenarioId: string
+  fromAgvCount: number
+  toAgvCount: number
+  throughputDeltaPct: number
+  averageWaitingDeltaPct: number
+  agvUtilizationDeltaPct: number
+  routeWaitingDeltaPct: number
 }
 
 export interface ProjectDocument {
+  schemaVersion?: string
   project: {
     name: string
     version: number
@@ -181,6 +315,8 @@ export interface ProjectDocument {
   edges: ProjectEdge[]
   tasks: TransportTask[]
   simulationConfig: SimulationConfig
+  scenarios?: ScenarioDefinition[]
+  experiment?: ExperimentDefinition
 }
 
 export interface AgvComparisonRow {
@@ -191,6 +327,8 @@ export interface AgvComparisonRow {
   averageCycleTime: number
   completedTasks: number
   simulationTime: number
+  emptyTravelRatio?: number
+  routeWaitingTime?: number
 }
 
 export interface Bottleneck {
@@ -199,6 +337,8 @@ export interface Bottleneck {
   reason: string
   utilization?: number
   averageQueueLength?: number
+  routeWaitingTime?: number
+  kind?: 'resource' | 'intersection' | 'edge' | 'queue'
 }
 
 export interface ResourceStats {
@@ -207,8 +347,12 @@ export interface ResourceStats {
   type: string
   busyTime: number
   idleTime: number
+  blockedTime: number
+  waitingTime: number
+  faultTime: number
   utilization: number
   averageQueueLength: number
+  completedCount: number
 }
 
 export interface StatisticsSnapshot {
@@ -226,8 +370,27 @@ export interface StatisticsSnapshot {
   idleTime: number
   busyTime: number
   averageQueueLength: number
+  waiting: WaitingStatistics
+  emptyTravelRatio: number
+  routeWaitingTime: number
+  agvKpis: AgvKpi[]
   resources: ResourceStats[]
   bottlenecks: Bottleneck[]
+}
+
+export interface SimulationLogEntry {
+  id: string
+  simulationTime: number
+  entityId: string
+  entityType: string
+  eventType: string
+  message: string
+}
+
+export interface TimelineSegment {
+  status: string
+  startTime: number
+  endTime: number
 }
 
 export interface RuntimeDeviceView {
@@ -242,6 +405,7 @@ export interface RuntimeDeviceView {
   path?: string[]
   moveStartTime?: number
   moveEndTime?: number
+  timeline?: TimelineSegment[]
 }
 
 export interface SimulationSnapshot {
@@ -261,4 +425,5 @@ export interface SimulationSnapshot {
   devices: RuntimeDeviceView[]
   statistics: StatisticsSnapshot
   logs: string[]
+  eventLog: SimulationLogEntry[]
 }

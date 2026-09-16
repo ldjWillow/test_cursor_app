@@ -13,6 +13,7 @@ import type {
 import { Graph } from '../routing/Graph.ts'
 import { nextId } from '../utils/id.ts'
 import { distance } from '../utils/math.ts'
+import { SimulationLogger } from './SimulationLogger.ts'
 import type {
   AgvRuntime,
   ConveyorRuntime,
@@ -37,6 +38,7 @@ export class SimulationWorld {
   readonly tasks = new Map<string, TaskRuntime>()
   readonly flowDownstream = new Map<string, string[]>()
   graph: Graph = new Graph()
+  logger = new SimulationLogger()
   logs: string[] = []
   generatedCount = 0
   completedCount = 0
@@ -45,6 +47,11 @@ export class SimulationWorld {
   waitingTimeTotal = 0
   cycleTimeTotal = 0
   completedWaitSamples = 0
+  taskWaitingTotal = 0
+  routeWaitingTotal = 0
+  resourceWaitingTotal = 0
+  loadingWaitingTotal = 0
+  dynamicTasksCreated = 0
   queueIntegral = 0
   lastQueueSampleTime = 0
   lastQueueLength = 0
@@ -54,6 +61,17 @@ export class SimulationWorld {
     if (this.logs.length > 80) {
       this.logs.shift()
     }
+  }
+
+  record(
+    time: number,
+    entityId: string,
+    entityType: string,
+    eventType: string,
+    message: string,
+  ): void {
+    this.logger.log(time, entityId, entityType, eventType, message)
+    this.log(time, message)
   }
 
   waitingTaskList(): TaskRuntime[] {
@@ -179,6 +197,11 @@ export function buildWorld(project: ProjectDocument): SimulationWorld {
         waiting: [],
         downstreamIds: downstream,
         busyTime: 0,
+        idleTime: 0,
+        blockedTime: 0,
+        waitingTime: 0,
+        faultTime: 0,
+        completedCount: 0,
         lastChangeTime: 0,
         occupancyIntegral: 0,
         x: device.x,
@@ -234,9 +257,20 @@ export function buildWorld(project: ProjectDocument): SimulationWorld {
         x: node?.x ?? device.x,
         y: node?.y ?? device.y,
         path: [],
+        pathIndex: 0,
         busyTime: 0,
         idleTime: 0,
+        blockedTime: 0,
+        waitingTime: 0,
+        faultTime: 0,
+        routeWaitingTime: 0,
+        travelDistance: 0,
+        loadedTravelDistance: 0,
+        emptyTravelDistance: 0,
+        taskCount: 0,
+        completedCount: 0,
         lastStatusChange: 0,
+        timeline: [{ status: AgvStatus.Idle, startTime: 0, endTime: 0 }],
       })
     }
 
@@ -284,6 +318,10 @@ export function buildWorld(project: ProjectDocument): SimulationWorld {
         busy: false,
         busyTime: 0,
         idleTime: 0,
+        blockedTime: 0,
+        waitingTime: 0,
+        faultTime: 0,
+        completedCount: 0,
         lastStatusChange: 0,
         x: device.x,
         y: device.y,

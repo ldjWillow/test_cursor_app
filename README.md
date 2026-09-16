@@ -1,24 +1,25 @@
 # WarehouseSim
 
-Web discrete-event warehouse logistics simulation MVP.
+Discrete-event warehouse simulation for layout design, AGV fleet experiments, and bottleneck analysis.
 
-Stack: React, TypeScript, Vite, React Flow, Zustand, Ant Design, Vitest.
+## V0.2 — Experiment & Traffic
 
-The UI never owns simulation logic. Device motion is driven by a discrete-event engine, not CSS animation or `setInterval` coordinate updates.
+- Scenario overrides + batch ExperimentManager (with replications)
+- Reservation-based TrafficManager (node/edge conflict + waiting)
+- TaskGenerator / DemandProfile + seeded RandomGenerator
+- Waiting-time breakdown, AGV KPIs, BottleneckAnalyzer
+- Experiment Results charts, Event Log, AGV Timeline
+- ModelValidator, Undo/Redo, Duplicate, device templates
 
-## Online preview
+## Scripts
 
-Permanent URL after GitHub Pages is enabled:
+```bash
+npm install
+npm run dev
+npm test
+npm run build
+```
 
-**https://ldjwillow.github.io/test_cursor_app/**
+## Schema
 
-Enable it once in the repository:
-
-1. Open [Settings → Pages](https://github.com/ldjWillow/test_cursor_app/settings/pages)
-2. Source: **Deploy from a branch**
-3. Branch: `main`, folder: `/docs`
-4. Save
-
-Later pushes to `main` can also publish through GitHub Actions (same URL).
-
-A Cloud Agent tunnel such as `*.trycloudflare.com` only lasts while that agent VM is running. It cannot stay online 24/7.
+Projects use `schemaVersion: "0.2"`. Older JSON is migrated on import/load.

@@ -3,6 +3,7 @@ import type { Connection, Edge, Node } from 'reactflow'
 import {
   DeviceType,
   EdgeKind,
+  SCHEMA_VERSION,
 } from '../types/index.ts'
 import type {
   DeviceParams,
@@ -12,30 +13,43 @@ import type {
   ProjectEdge,
 } from '../types/index.ts'
 import { defaultParams, MATERIAL_FLOW_TYPES, PATH_TYPES } from '../domain/base/defaults.ts'
+import { templateById } from '../domain/base/templates.ts'
 import { agvScenario, emptyProject } from '../domain/base/scenarios.ts'
+import { ensureSchemaVersion } from '../persistence/migrate.ts'
 import { createUuid } from '../utils/id.ts'
 import { distance } from '../utils/math.ts'
+
+const HISTORY_LIMIT = 50
 
 export interface ProjectStore {
   document: ProjectDocument
   selectedId: string | null
   selectedKind: 'device' | 'edge' | null
+  clipboard: PlacedDevice | null
   nodes: Node[]
   edges: Edge[]
   revision: number
+  past: ProjectDocument[]
+  future: ProjectDocument[]
   setDocument: (document: ProjectDocument) => void
   newProject: () => void
-  addDevice: (type: DeviceTypeName, position: { x: number; y: number }) => void
+  addDevice: (type: DeviceTypeName, position: { x: number; y: number }, templateId?: string) => void
   updateDeviceParams: (id: string, params: DeviceParams) => void
   updateDeviceName: (id: string, name: string) => void
   setSelection: (id: string | null, kind?: 'device' | 'edge' | null) => void
   setNodes: (nodes: Node[]) => void
+  commitNodePositions: (nodes: Node[]) => void
   setEdges: (edges: Edge[]) => void
   connect: (connection: Connection) => void
   removeSelected: () => void
   replaceTasks: (sourceId: string, targetId: string, count: number) => void
   setProjectName: (name: string) => void
   updateEdge: (id: string, patch: Partial<ProjectEdge>) => void
+  undo: () => void
+  redo: () => void
+  copySelected: () => void
+  pasteClipboard: () => void
+  duplicateSelected: () => void
 }
 
 function toRfNode(device: PlacedDevice): Node {
@@ -66,10 +80,11 @@ function toRfEdge(edge: ProjectEdge): Edge {
 }
 
 function syncFromDocument(document: ProjectDocument): Pick<ProjectStore, 'document' | 'nodes' | 'edges'> {
+  const normalized = ensureSchemaVersion(document)
   return {
-    document,
-    nodes: document.devices.map(toRfNode),
-    edges: document.edges.map(toRfEdge),
+    document: normalized,
+    nodes: normalized.devices.map(toRfNode),
+    edges: normalized.edges.map(toRfEdge),
   }
 }
 
@@ -94,17 +109,40 @@ function persistPositions(document: ProjectDocument, nodes: Node[]): ProjectDocu
   }
 }
 
+function pushHistory(
+  get: () => ProjectStore,
+  set: (partial: Partial<ProjectStore>) => void,
+  nextDocument: ProjectDocument,
+  extra: Partial<ProjectStore> = {},
+): void {
+  const current = get().document
+  const past = [...get().past, structuredClone(current)].slice(-HISTORY_LIMIT)
+  const synced = syncFromDocument(nextDocument)
+  set({
+    ...synced,
+    past,
+    future: [],
+    revision: get().revision + 1,
+    ...extra,
+  })
+}
+
 export const useProjectStore = create<ProjectStore>((set, get) => ({
   ...syncFromDocument(agvScenario(3, 100)),
   selectedId: null,
   selectedKind: null,
+  clipboard: null,
   revision: 1,
+  past: [],
+  future: [],
 
   setDocument: (document) => {
     set({
       ...syncFromDocument(document),
       selectedId: null,
       selectedKind: null,
+      past: [],
+      future: [],
       revision: get().revision + 1,
     })
   },
@@ -113,29 +151,27 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     get().setDocument(emptyProject('WarehouseSim'))
   },
 
-  addDevice: (type, position) => {
+  addDevice: (type, position, templateId) => {
     const count = get().document.devices.filter((device) => device.type === type).length + 1
+    const template = templateId ? templateById(templateId) : undefined
     const device: PlacedDevice = {
       id: createUuid(type),
       type,
-      name: `${type}-${String(count).padStart(2, '0')}`,
+      name: template?.name ? `${template.name}-${count}` : `${type}-${String(count).padStart(2, '0')}`,
       x: position.x,
       y: position.y,
-      params: defaultParams(type),
+      params: template ? structuredClone(template.params) : defaultParams(type),
     }
     const document = {
       ...get().document,
+      schemaVersion: SCHEMA_VERSION,
       devices: [...get().document.devices, device],
       nodes:
         PATH_TYPES.includes(type)
           ? [...get().document.nodes, { id: device.id, x: device.x, y: device.y, label: device.name }]
           : get().document.nodes,
     }
-    set({
-      document,
-      nodes: [...get().nodes, toRfNode(device)],
-      revision: get().revision + 1,
-    })
+    pushHistory(get, set, document)
   },
 
   updateDeviceParams: (id, params) => {
@@ -145,7 +181,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         device.id === id ? { ...device, params } : device,
       ),
     }
-    set({ document, revision: get().revision + 1 })
+    pushHistory(get, set, document)
   },
 
   updateDeviceName: (id, name) => {
@@ -155,13 +191,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         device.id === id ? { ...device, name } : device,
       ),
     }
-    set({
-      document,
-      nodes: get().nodes.map((node) =>
-        node.id === id ? { ...node, data: { ...node.data, name } } : node,
-      ),
-      revision: get().revision + 1,
-    })
+    pushHistory(get, set, document)
   },
 
   setSelection: (id, kind = id ? 'device' : null) => {
@@ -169,6 +199,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   setNodes: (nodes) => {
+    // Live drag updates without history spam.
     const ids = new Set(nodes.map((node) => node.id))
     const positioned = persistPositions(get().document, nodes)
     set({
@@ -182,16 +213,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     })
   },
 
+  commitNodePositions: (nodes) => {
+    const positioned = persistPositions(get().document, nodes)
+    pushHistory(get, set, positioned, { nodes })
+  },
+
   setEdges: (edges) => {
     const remaining = new Set(edges.map((edge) => edge.id))
-    set({
-      edges,
-      document: {
-        ...get().document,
-        edges: get().document.edges.filter((edge) => remaining.has(edge.id)),
-      },
-      revision: get().revision + 1,
-    })
+    const document = {
+      ...get().document,
+      edges: get().document.edges.filter((edge) => remaining.has(edge.id)),
+    }
+    pushHistory(get, set, document)
   },
 
   connect: (connection) => {
@@ -218,6 +251,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       distance: kind === EdgeKind.Path ? Math.max(0.1, dist / 20) : 0,
       maxSpeed: 2,
       enabled: true,
+      capacity: 1,
     })
     const created = [makeEdge(connection.source, connection.target, '')]
     if (kind === EdgeKind.Path) {
@@ -227,11 +261,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       ...get().document,
       edges: [...get().document.edges, ...created],
     }
-    set({
-      document,
-      edges: document.edges.map(toRfEdge),
-      revision: get().revision + 1,
-    })
+    pushHistory(get, set, document)
   },
 
   removeSelected: () => {
@@ -240,37 +270,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       return
     }
     if (selectedKind === 'edge') {
-      const nextEdges = document.edges.filter((edge) => edge.id !== selectedId)
-      set({
-        document: { ...document, edges: nextEdges },
-        edges: nextEdges.map(toRfEdge),
-        selectedId: null,
-        selectedKind: null,
-        revision: get().revision + 1,
-      })
+      const nextDocument = {
+        ...document,
+        edges: document.edges.filter((edge) => edge.id !== selectedId),
+      }
+      pushHistory(get, set, nextDocument, { selectedId: null, selectedKind: null })
       return
     }
-    const nextDevices = document.devices.filter((device) => device.id !== selectedId)
-    const nextNodes = document.nodes.filter((node) => node.id !== selectedId)
-    const nextEdges = document.edges.filter(
-      (edge) => edge.from !== selectedId && edge.to !== selectedId,
-    )
-    const nextTasks = document.tasks.filter(
-      (task) => task.sourceId !== selectedId && task.targetId !== selectedId,
-    )
     const nextDocument = {
       ...document,
-      devices: nextDevices,
-      nodes: nextNodes,
-      edges: nextEdges,
-      tasks: nextTasks,
+      devices: document.devices.filter((device) => device.id !== selectedId),
+      nodes: document.nodes.filter((node) => node.id !== selectedId),
+      edges: document.edges.filter(
+        (edge) => edge.from !== selectedId && edge.to !== selectedId,
+      ),
+      tasks: document.tasks.filter(
+        (task) => task.sourceId !== selectedId && task.targetId !== selectedId,
+      ),
     }
-    set({
-      ...syncFromDocument(nextDocument),
-      selectedId: null,
-      selectedKind: null,
-      revision: get().revision + 1,
-    })
+    pushHistory(get, set, nextDocument, { selectedId: null, selectedKind: null })
   },
 
   replaceTasks: (sourceId, targetId, count) => {
@@ -292,7 +310,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         taskTargetId: targetId,
       },
     }
-    set({ document, revision: get().revision + 1 })
+    pushHistory(get, set, document)
   },
 
   setProjectName: (name) => {
@@ -306,11 +324,79 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       ...get().document,
       edges: get().document.edges.map((edge) => (edge.id === id ? { ...edge, ...patch } : edge)),
     }
+    pushHistory(get, set, document)
+  },
+
+  undo: () => {
+    const { past, document, future } = get()
+    const previous = past[past.length - 1]
+    if (!previous) {
+      return
+    }
     set({
-      document,
-      edges: document.edges.map(toRfEdge),
+      ...syncFromDocument(previous),
+      past: past.slice(0, -1),
+      future: [structuredClone(document), ...future].slice(0, HISTORY_LIMIT),
       revision: get().revision + 1,
+      selectedId: null,
+      selectedKind: null,
     })
+  },
+
+  redo: () => {
+    const { past, document, future } = get()
+    const next = future[0]
+    if (!next) {
+      return
+    }
+    set({
+      ...syncFromDocument(next),
+      past: [...past, structuredClone(document)].slice(-HISTORY_LIMIT),
+      future: future.slice(1),
+      revision: get().revision + 1,
+      selectedId: null,
+      selectedKind: null,
+    })
+  },
+
+  copySelected: () => {
+    const { selectedId, selectedKind, document } = get()
+    if (!selectedId || selectedKind === 'edge') {
+      return
+    }
+    const device = document.devices.find((item) => item.id === selectedId)
+    if (device) {
+      set({ clipboard: structuredClone(device) })
+    }
+  },
+
+  pasteClipboard: () => {
+    const clip = get().clipboard
+    if (!clip) {
+      return
+    }
+    const count = get().document.devices.filter((device) => device.type === clip.type).length + 1
+    const device: PlacedDevice = {
+      ...structuredClone(clip),
+      id: createUuid(clip.type),
+      name: `${clip.type}-${String(count).padStart(2, '0')}`,
+      x: clip.x + 24,
+      y: clip.y + 24,
+    }
+    set({ clipboard: { ...device } })
+    const document = {
+      ...get().document,
+      devices: [...get().document.devices, device],
+      nodes: PATH_TYPES.includes(device.type)
+        ? [...get().document.nodes, { id: device.id, x: device.x, y: device.y, label: device.name }]
+        : get().document.nodes,
+    }
+    pushHistory(get, set, document, { selectedId: device.id, selectedKind: 'device' })
+  },
+
+  duplicateSelected: () => {
+    get().copySelected()
+    get().pasteClipboard()
   },
 }))
 

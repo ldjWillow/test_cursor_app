@@ -1,4 +1,4 @@
-import type { AgvStatus, TaskStatus } from '../types/index.ts'
+import type { AgvStatus, TaskStatus, TimelineSegment } from '../types/index.ts'
 
 export interface MaterialRuntime {
   id: string
@@ -33,6 +33,11 @@ export interface ConveyorRuntime {
   waiting: string[]
   downstreamIds: string[]
   busyTime: number
+  idleTime: number
+  blockedTime: number
+  waitingTime: number
+  faultTime: number
+  completedCount: number
   lastChangeTime: number
   occupancyIntegral: number
   x: number
@@ -78,11 +83,30 @@ export interface AgvRuntime {
   y: number
   currentTaskId?: string
   path: string[]
+  /** Index of current node within path (AGV is at path[pathIndex]). */
+  pathIndex: number
+  /** Remaining path goal for current leg. */
+  routeGoal?: string
+  /** Pickup or dropoff leg. */
+  routeKind?: 'pickup' | 'dropoff'
+  pendingEdgeId?: string
+  pendingNodeId?: string
   moveStartTime?: number
   moveEndTime?: number
   busyTime: number
   idleTime: number
+  blockedTime: number
+  waitingTime: number
+  faultTime: number
+  routeWaitingTime: number
+  routeWaitStart?: number
+  travelDistance: number
+  loadedTravelDistance: number
+  emptyTravelDistance: number
+  taskCount: number
+  completedCount: number
   lastStatusChange: number
+  timeline: TimelineSegment[]
 }
 
 export interface RackLocationRuntime {
@@ -122,6 +146,10 @@ export interface StackerRuntime {
   busy: boolean
   busyTime: number
   idleTime: number
+  blockedTime: number
+  waitingTime: number
+  faultTime: number
+  completedCount: number
   lastStatusChange: number
   x: number
   y: number

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import type { DragEvent } from 'react'
 import ReactFlow, {
   Background,
@@ -31,8 +31,15 @@ function CanvasInner() {
   const connect = useProjectStore((state) => state.connect)
   const addDevice = useProjectStore((state) => state.addDevice)
   const setSelection = useProjectStore((state) => state.setSelection)
+  const undo = useProjectStore((state) => state.undo)
+  const redo = useProjectStore((state) => state.redo)
+  const copySelected = useProjectStore((state) => state.copySelected)
+  const pasteClipboard = useProjectStore((state) => state.pasteClipboard)
+  const duplicateSelected = useProjectStore((state) => state.duplicateSelected)
+  const removeSelected = useProjectStore((state) => state.removeSelected)
   const snapshot = useSimulationStore((state) => state.snapshot)
   const simStatus = useSimulationStore((state) => state.status)
+  const setSelectedLogEntity = useSimulationStore((state) => state.setSelectedLogEntity)
   const { screenToFlowPosition } = useReactFlow()
 
   const displayNodes = useMemo(() => {
@@ -88,14 +95,49 @@ function CanvasInner() {
     (event: DragEvent) => {
       event.preventDefault()
       const type = event.dataTransfer.getData('application/warehousesim') as DeviceTypeName
+      const templateId = event.dataTransfer.getData('application/warehousesim-template')
       if (!type) {
         return
       }
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      addDevice(type, position)
+      addDevice(type, position, templateId || undefined)
     },
     [addDevice, screenToFlowPosition],
   )
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return
+      }
+      const mod = event.metaKey || event.ctrlKey
+      if (mod && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        undo()
+      } else if (mod && (event.key.toLowerCase() === 'y' || (event.key.toLowerCase() === 'z' && event.shiftKey))) {
+        event.preventDefault()
+        redo()
+      } else if (mod && event.key.toLowerCase() === 'c') {
+        event.preventDefault()
+        copySelected()
+      } else if (mod && event.key.toLowerCase() === 'v') {
+        event.preventDefault()
+        pasteClipboard()
+      } else if (mod && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        duplicateSelected()
+      } else if (event.key === 'Delete' || event.key === 'Backspace') {
+        // React Flow also handles delete; keep store in sync for selection-only deletes.
+        if (useProjectStore.getState().selectedId) {
+          event.preventDefault()
+          removeSelected()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [undo, redo, copySelected, pasteClipboard, duplicateSelected, removeSelected])
 
   return (
     <ReactFlow
@@ -108,6 +150,7 @@ function CanvasInner() {
       onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
         if (selectedNodes[0]) {
           setSelection(selectedNodes[0].id, 'device')
+          setSelectedLogEntity(selectedNodes[0].id)
           return
         }
         if (selectedEdges[0]) {
@@ -116,12 +159,15 @@ function CanvasInner() {
         }
         setSelection(null, null)
       }}
+      onNodeDragStop={(_event, _node, currentNodes) => {
+        useProjectStore.getState().commitNodePositions(currentNodes)
+      }}
       onDragOver={(event) => {
         event.preventDefault()
         event.dataTransfer.dropEffect = 'move'
       }}
       onDrop={onDrop}
-      deleteKeyCode={['Backspace', 'Delete']}
+      deleteKeyCode={null}
       snapToGrid
       snapGrid={[16, 16]}
       fitView

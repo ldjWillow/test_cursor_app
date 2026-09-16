@@ -30,7 +30,7 @@ body,
   height: 100%;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 280px;
-  grid-template-rows: 52px minmax(0, 1fr) 250px;
+  grid-template-rows: 52px minmax(0, 1fr) 320px;
   background: var(--bg);
 }
 
@@ -239,7 +239,7 @@ body,
 
 .sim-columns {
   display: grid;
-  grid-template-columns: 220px 180px 280px minmax(0, 1fr);
+  grid-template-columns: 220px 200px 280px minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -261,6 +261,57 @@ body,
   color: #f07178;
   font-size: 11px;
   margin-top: 6px;
+}
+
+.log-scroll {
+  max-height: 160px;
+  overflow: auto;
+}
+
+.experiment-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 12px;
+}
+
+.experiment-charts {
+  min-width: 0;
+}
+
+.delta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.delta-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+}
+
+.delta-up {
+  color: #3ecf8e;
+}
+
+.delta-down {
+  color: #f5a524;
+}
+
+.agv-kpi {
+  margin-top: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: #c5d0de;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
 }
 
 .react-flow__controls,

@@ -5,20 +5,43 @@ import { useProjectStore } from '../../store/projectStore.ts'
 import { useSimulationStore } from '../../store/simulationStore.ts'
 import { simulationRuntime } from '../../simulation/SimulationRuntime.ts'
 import { exportProject, importProject, loadProject, saveProject } from '../../persistence/projectPersistence.ts'
-import { agvScenario, asrsScenario, conveyorScenario, emptyProject } from '../../domain/base/scenarios.ts'
-import { compareAgvCounts } from '../../simulation/experiments.ts'
+import {
+  agvScenario,
+  asrsScenario,
+  conveyorScenario,
+  emptyProject,
+  standardWarehouseScenario,
+} from '../../domain/base/scenarios.ts'
+import { compareAgvCounts, runAgvExperiment } from '../../simulation/experiments.ts'
+import { experimentManager } from '../../experiment/ExperimentManager.ts'
+import { modelValidator } from '../../validation/ModelValidator.ts'
 
 const SPEEDS: SimulationSpeed[] = [1, 5, 10, 50]
+
+function validateOrError(document: ReturnType<typeof useProjectStore.getState>['document']): boolean {
+  const issues = modelValidator.validate(document)
+  useSimulationStore.getState().setValidationErrors(issues.map((issue) => issue.message))
+  if (issues.length > 0) {
+    useSimulationStore.getState().setError(`Validation failed: ${issues[0]?.message}`)
+    return false
+  }
+  useSimulationStore.getState().setError(undefined)
+  return true
+}
 
 export default function Toolbar() {
   const document = useProjectStore((state) => state.document)
   const revision = useProjectStore((state) => state.revision)
   const setDocument = useProjectStore((state) => state.setDocument)
   const removeSelected = useProjectStore((state) => state.removeSelected)
+  const undo = useProjectStore((state) => state.undo)
+  const redo = useProjectStore((state) => state.redo)
+  const duplicateSelected = useProjectStore((state) => state.duplicateSelected)
   const speed = useSimulationStore((state) => state.speed)
   const status = useSimulationStore((state) => state.status)
   const setSpeed = useSimulationStore((state) => state.setSpeed)
   const setComparison = useSimulationStore((state) => state.setComparison)
+  const setExperiment = useSimulationStore((state) => state.setExperiment)
   const setError = useSimulationStore((state) => state.setError)
 
   const scenarioItems: MenuProps['items'] = [
@@ -26,6 +49,7 @@ export default function Toolbar() {
     { key: 'conveyor', label: 'Source → Conveyor → Sink' },
     { key: 'agv', label: 'AGV A → N1 → N2 → B' },
     { key: 'asrs', label: 'Rack + Stacker inbound' },
+    { key: 'standard', label: 'Standard warehouse (V0.2)' },
   ]
 
   return (
@@ -46,6 +70,7 @@ export default function Toolbar() {
               if (key === 'conveyor') setDocument(conveyorScenario())
               if (key === 'agv') setDocument(agvScenario(3, 100))
               if (key === 'asrs') setDocument(asrsScenario())
+              if (key === 'standard') setDocument(standardWarehouseScenario(4, 200))
               if (key === 'empty') setDocument(emptyProject('WarehouseSim'))
               simulationRuntime.reset(useProjectStore.getState().document, useProjectStore.getState().revision)
             },
@@ -94,6 +119,15 @@ export default function Toolbar() {
         >
           Import
         </Button>
+        <Button size="small" onClick={undo}>
+          Undo
+        </Button>
+        <Button size="small" onClick={redo}>
+          Redo
+        </Button>
+        <Button size="small" onClick={duplicateSelected}>
+          Duplicate
+        </Button>
         <Button size="small" danger onClick={removeSelected}>
           Delete
         </Button>
@@ -101,7 +135,12 @@ export default function Toolbar() {
         <Button
           size="small"
           type="primary"
-          onClick={() => simulationRuntime.start(document, revision, speed)}
+          onClick={() => {
+            if (!validateOrError(document)) {
+              return
+            }
+            simulationRuntime.start(document, revision, speed)
+          }}
         >
           Start
         </Button>
@@ -129,19 +168,56 @@ export default function Toolbar() {
         ))}
         <Button
           size="small"
-          onClick={() => simulationRuntime.runToEnd(document, revision)}
+          onClick={() => {
+            if (!validateOrError(document)) {
+              return
+            }
+            simulationRuntime.runToEnd(document, revision)
+          }}
         >
           Run to end
         </Button>
         <Button
           size="small"
-          onClick={() => setComparison(compareAgvCounts([3, 4, 5, 6], 100))}
+          onClick={() => {
+            if (!validateOrError(document)) {
+              return
+            }
+            setComparison(compareAgvCounts([3, 4, 5, 6], 100))
+          }}
         >
           Compare 3-6 AGVs
         </Button>
+        <Button
+          size="small"
+          type="primary"
+          onClick={() => {
+            if (!validateOrError(document)) {
+              return
+            }
+            const { results, summaries } = runAgvExperiment(document, [3, 4, 5, 6], 1, document.simulationConfig.seed)
+            const deltas = experimentManager.compareSummaries(summaries)
+            setExperiment(results, summaries, deltas)
+            setComparison(
+              summaries.map((summary) => ({
+                agvCount: summary.agvCount,
+                throughput: summary.throughput.mean,
+                utilization: summary.agvUtilization.mean,
+                averageWaitingTime: summary.averageWaitingTime.mean,
+                averageCycleTime: summary.averageCycleTime.mean,
+                completedTasks: Math.round(summary.completedTasks.mean),
+                simulationTime: summary.results[0]?.simulationTime ?? 0,
+                emptyTravelRatio: summary.emptyTravelRatio.mean,
+                routeWaitingTime: summary.routeWaitingTime.mean,
+              })),
+            )
+          }}
+        >
+          Run Experiment
+        </Button>
       </Space>
       <Typography.Text className="toolbar-status" type="secondary">
-        {status === SimulationStatus.Idle ? 'IDLE' : status.toUpperCase()}
+        v0.2 · {status === SimulationStatus.Idle ? 'IDLE' : status.toUpperCase()}
       </Typography.Text>
     </header>
   )

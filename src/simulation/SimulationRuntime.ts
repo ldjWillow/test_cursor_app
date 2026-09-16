@@ -3,7 +3,7 @@ import { SimulationStatus } from '../types/index.ts'
 import { createEngine, SimulationEngine } from './SimulationEngine.ts'
 import { useSimulationStore } from '../store/simulationStore.ts'
 
-const SYNC_MS = 80
+const SYNC_MS = 100
 
 export class SimulationRuntime {
   private engine: SimulationEngine | null = null
