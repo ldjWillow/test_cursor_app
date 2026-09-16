@@ -51,7 +51,7 @@ function CanvasInner() {
   const setSelectedLogEntity = useSimulationStore((state) => state.setSelectedLogEntity)
   const setError = useSimulationStore((state) => state.setError)
   const { screenToFlowPosition, fitView, getViewport, setViewport } = useReactFlow()
-  const [minimapOpen, setMinimapOpen] = useState(true)
+  const [minimapOpen, setMinimapOpen] = useState(false)
   const editingLocked = simStatus === SimulationStatus.Running
 
   const displayNodes = useMemo(() => {

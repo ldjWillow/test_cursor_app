@@ -3,7 +3,7 @@ import { agvScenario } from '../domain/base/scenarios.ts'
 import { useProjectStore } from '../store/projectStore.ts'
 
 /** Mirrors WarehouseCanvas SAFE_FIT_PADDING — keeps nodes clear of chrome. */
-const SAFE_FIT_PADDING = 0.22
+const SAFE_FIT_PADDING = 0.28
 
 describe('canvas safe viewport', () => {
   it('keeps default scenario nodes inside a padded content box', () => {
