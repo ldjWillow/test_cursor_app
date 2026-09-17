@@ -1,8 +1,11 @@
+import { Tooltip } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { DeviceType } from '../../types/index.ts'
 import type { DeviceType as DeviceTypeName } from '../../types/index.ts'
 import { DEVICE_TEMPLATES } from '../../domain/base/templates.ts'
 import { deviceTypeLabel } from '../../i18n/statusLabels.ts'
+import { useSimulationStore } from '../../store/simulationStore.ts'
+import { isModelEditable, modelLockMessageKey } from '../../utils/modelLock.ts'
 
 const CATEGORIES: Array<{
   key: 'basic' | 'logistics' | 'storage' | 'agv' | 'control'
@@ -31,29 +34,45 @@ const TEMPLATE_I18N: Record<string, { name: string; description: string }> = {
 
 export default function DeviceLibrary() {
   const { t } = useTranslation()
+  const status = useSimulationStore((state) => state.status)
+  const editable = isModelEditable(status)
+  const lockTip = editable ? undefined : t(modelLockMessageKey())
 
   return (
-    <aside className="panel device-library">
+    <aside className={`panel device-library${editable ? '' : ' device-library-locked'}`}>
       <div className="panel-title">{t('deviceLibrary.title')}</div>
-      <p className="panel-hint">{t('deviceLibrary.hint')}</p>
+      <p className="panel-hint">{editable ? t('deviceLibrary.hint') : lockTip}</p>
       {CATEGORIES.map((category) => (
         <div key={category.key} className="library-category">
           <div className="library-category-title">{t(`deviceLibrary.categories.${category.key}`)}</div>
           <div className="library-list">
-            {category.types.map((type) => (
-              <div
-                key={type}
-                className={`library-item library-${type}`}
-                draggable
-                onDragStart={(event) => {
-                  event.dataTransfer.setData('application/warehousesim', type)
-                  event.dataTransfer.effectAllowed = 'move'
-                }}
-              >
-                <span className="library-swatch" />
-                <span>{deviceTypeLabel(type, t)}</span>
-              </div>
-            ))}
+            {category.types.map((type) => {
+              const item = (
+                <div
+                  key={type}
+                  className={`library-item library-${type}${editable ? '' : ' library-item-disabled'}`}
+                  draggable={editable}
+                  onDragStart={(event) => {
+                    if (!editable) {
+                      event.preventDefault()
+                      return
+                    }
+                    event.dataTransfer.setData('application/warehousesim', type)
+                    event.dataTransfer.effectAllowed = 'move'
+                  }}
+                >
+                  <span className="library-swatch" />
+                  <span>{deviceTypeLabel(type, t)}</span>
+                </div>
+              )
+              return editable ? (
+                item
+              ) : (
+                <Tooltip key={type} title={lockTip}>
+                  {item}
+                </Tooltip>
+              )
+            })}
           </div>
         </div>
       ))}
@@ -65,13 +84,17 @@ export default function DeviceLibrary() {
           const keys = TEMPLATE_I18N[template.id]
           const name = keys ? t(keys.name) : template.name
           const description = keys ? t(keys.description) : template.description
-          return (
+          const item = (
             <div
               key={template.id}
-              className={`library-item library-${template.type}`}
-              draggable
-              title={description}
+              className={`library-item library-${template.type}${editable ? '' : ' library-item-disabled'}`}
+              draggable={editable}
+              title={editable ? description : lockTip}
               onDragStart={(event) => {
+                if (!editable) {
+                  event.preventDefault()
+                  return
+                }
                 event.dataTransfer.setData('application/warehousesim', template.type)
                 event.dataTransfer.setData('application/warehousesim-template', template.id)
                 event.dataTransfer.effectAllowed = 'move'
@@ -84,6 +107,13 @@ export default function DeviceLibrary() {
                 <small className="panel-hint">{description}</small>
               </span>
             </div>
+          )
+          return editable ? (
+            item
+          ) : (
+            <Tooltip key={template.id} title={lockTip}>
+              {item}
+            </Tooltip>
           )
         })}
       </div>

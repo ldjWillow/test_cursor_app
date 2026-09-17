@@ -251,9 +251,7 @@ export default function PropertyPanel() {
   return (
     <aside className={`panel property-panel${editable ? '' : ' property-panel-locked'}`}>
       <div className="panel-title">{t('properties.title')}</div>
-      {!editable && (
-        <div className="panel-hint">{t('properties.locked', { defaultValue: '仿真运行中，模型只读' })}</div>
-      )}
+      {!editable && <div className="panel-hint">{t('messages.modelLocked')}</div>}
       {!selectedId && <div className="panel-hint">{t('properties.empty')}</div>}
       {selectedKind === 'device' && device && (
         <div className="prop-form">

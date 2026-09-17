@@ -35,6 +35,7 @@ export interface SimulationViewState {
   setSelectedLogEntity: (entityId?: string) => void
   setError: (message?: string) => void
   setValidationErrors: (errors: string[]) => void
+  clearEventLog: () => void
 }
 
 export const useSimulationStore = create<SimulationViewState>((set) => ({
@@ -67,4 +68,12 @@ export const useSimulationStore = create<SimulationViewState>((set) => ({
   setSelectedLogEntity: (selectedLogEntity) => set({ selectedLogEntity }),
   setError: (lastError) => set({ lastError }),
   setValidationErrors: (validationErrors) => set({ validationErrors }),
+  clearEventLog: () =>
+    set((state) => ({
+      snapshot: {
+        ...state.snapshot,
+        eventLog: [],
+        logs: [],
+      },
+    })),
 }))

@@ -37,3 +37,22 @@ export function assertModelEditable(_action = 'edit'): boolean {
   }
   return true
 }
+
+/** Localized tip key suffix for UI tooltips. */
+export function modelLockMessageKey():
+  | 'messages.modelLocked'
+  | 'messages.modelLockedRunning'
+  | 'messages.modelLockedPaused'
+  | 'messages.modelLockedReplay' {
+  const reason = modelLockReason()
+  if (reason === 'running') {
+    return 'messages.modelLockedRunning'
+  }
+  if (reason === 'paused') {
+    return 'messages.modelLockedPaused'
+  }
+  if (reason === 'replay') {
+    return 'messages.modelLockedReplay'
+  }
+  return 'messages.modelLocked'
+}

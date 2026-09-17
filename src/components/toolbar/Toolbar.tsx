@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ComponentProps } from 'react'
 import { Button, Dropdown, Input, Select, Space, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { useTranslation } from 'react-i18next'
@@ -27,7 +28,7 @@ import {
   workerRunExperiment,
   workerRunToEnd,
 } from '../../workers/experimentClient.ts'
-import { isModelEditable } from '../../utils/modelLock.ts'
+import { isModelEditable, modelLockMessageKey } from '../../utils/modelLock.ts'
 import {
   operatingModeLabel,
   simulationStatusLabel,
@@ -76,6 +77,27 @@ export default function Toolbar() {
   const [batchBusy, setBatchBusy] = useState(false)
 
   const modelEditable = isModelEditable(status)
+  const lockTip = modelEditable ? undefined : t(modelLockMessageKey())
+
+  const LockedButton = ({
+    children,
+    disabled,
+    ...rest
+  }: ComponentProps<typeof Button>) => {
+    const button = (
+      <Button {...rest} disabled={Boolean(disabled) || !modelEditable}>
+        {children}
+      </Button>
+    )
+    if (!modelEditable) {
+      return (
+        <Tooltip title={lockTip}>
+          <span style={{ display: 'inline-flex' }}>{button}</span>
+        </Tooltip>
+      )
+    }
+    return button
+  }
 
   const validateOrError = (): boolean => {
     const issues = modelValidator.validate(document)
@@ -243,30 +265,32 @@ export default function Toolbar() {
       </div>
       <Space size={4} wrap className="toolbar-actions">
         {/* project */}
-        <Dropdown
-          disabled={!modelEditable}
-          menu={{
-            items: scenarioItems,
-            onClick: ({ key }) => {
-              if (!isModelEditable()) {
-                return
-              }
-              if (key === 'conveyor') setDocument(conveyorScenario())
-              if (key === 'agv') setDocument(agvScenario(3, 100))
-              if (key === 'asrs') setDocument(asrsScenario())
-              if (key === 'demo') setDocument(automatedWarehouseDemo(200))
-              if (key === 'standard') setDocument(standardWarehouseScenario(4, 200))
-              if (key === 'empty') setDocument(emptyProject('WarehouseSim'))
-              const next = useProjectStore.getState().document
-              deviceRegistry.loadFromProject(next)
-              simulationRuntime.reset(next, useProjectStore.getState().revision)
-            },
-          }}
-        >
-          <Button size="small" disabled={!modelEditable}>
-            {t('toolbar.new')}
-          </Button>
-        </Dropdown>
+        <Tooltip title={lockTip}>
+          <Dropdown
+            disabled={!modelEditable}
+            menu={{
+              items: scenarioItems,
+              onClick: ({ key }) => {
+                if (!isModelEditable()) {
+                  return
+                }
+                if (key === 'conveyor') setDocument(conveyorScenario())
+                if (key === 'agv') setDocument(agvScenario(3, 100))
+                if (key === 'asrs') setDocument(asrsScenario())
+                if (key === 'demo') setDocument(automatedWarehouseDemo(200))
+                if (key === 'standard') setDocument(standardWarehouseScenario(4, 200))
+                if (key === 'empty') setDocument(emptyProject('WarehouseSim'))
+                const next = useProjectStore.getState().document
+                deviceRegistry.loadFromProject(next)
+                simulationRuntime.reset(next, useProjectStore.getState().revision)
+              },
+            }}
+          >
+            <Button size="small" disabled={!modelEditable}>
+              {t('toolbar.new')}
+            </Button>
+          </Dropdown>
+        </Tooltip>
         <Button
           size="small"
           onClick={() => {
@@ -275,9 +299,8 @@ export default function Toolbar() {
         >
           {t('toolbar.save')}
         </Button>
-        <Button
+        <LockedButton
           size="small"
-          disabled={!modelEditable}
           onClick={() => {
             const loaded = loadProject()
             if (loaded) {
@@ -289,13 +312,12 @@ export default function Toolbar() {
           }}
         >
           {t('toolbar.load')}
-        </Button>
+        </LockedButton>
         <Button size="small" onClick={() => exportProject(document)}>
           {t('toolbar.export')}
         </Button>
-        <Button
+        <LockedButton
           size="small"
-          disabled={!modelEditable}
           onClick={() => {
             const input = window.document.createElement('input')
             input.type = 'file'
@@ -323,7 +345,7 @@ export default function Toolbar() {
           }}
         >
           {t('toolbar.import')}
-        </Button>
+        </LockedButton>
 
         <span className="toolbar-sep" />
         {/* view */}
@@ -363,18 +385,18 @@ export default function Toolbar() {
 
         <span className="toolbar-sep" />
         {/* edit */}
-        <Button size="small" disabled={!modelEditable} onClick={undo}>
+        <LockedButton size="small" onClick={undo}>
           {t('toolbar.undo')}
-        </Button>
-        <Button size="small" disabled={!modelEditable} onClick={redo}>
+        </LockedButton>
+        <LockedButton size="small" onClick={redo}>
           {t('toolbar.redo')}
-        </Button>
-        <Button size="small" disabled={!modelEditable} onClick={duplicateSelected}>
+        </LockedButton>
+        <LockedButton size="small" onClick={duplicateSelected}>
           {t('toolbar.duplicate')}
-        </Button>
-        <Button size="small" danger disabled={!modelEditable} onClick={confirmDelete}>
+        </LockedButton>
+        <LockedButton size="small" danger onClick={confirmDelete}>
           {t('toolbar.delete')}
-        </Button>
+        </LockedButton>
 
         <span className="toolbar-sep" />
         {/* sim */}

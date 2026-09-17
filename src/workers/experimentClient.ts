@@ -21,6 +21,8 @@ type WorkerPayload = Exclude<WorkerRequest, never> extends infer R
 
 let worker: Worker | null = null
 let busy = false
+let activeReject: ((error: Error) => void) | null = null
+let activeCleanup: (() => void) | null = null
 const TIMEOUT_MS = 120_000
 
 function getWorker(): Worker {
@@ -65,9 +67,15 @@ function runTask<T>(
     const cleanup = () => {
       window.clearTimeout(timer)
       instance.removeEventListener('message', onMessage)
+      if (activeCleanup === cleanup) {
+        activeCleanup = null
+        activeReject = null
+      }
       busy = false
     }
 
+    activeCleanup = cleanup
+    activeReject = reject
     instance.addEventListener('message', onMessage)
     instance.postMessage({ ...request, id } as WorkerRequest)
   }).finally(() => {
@@ -80,11 +88,17 @@ export function isExperimentWorkerBusy(): boolean {
 }
 
 export function cancelExperimentWorker(): void {
+  const reject = activeReject
+  const cleanup = activeCleanup
+  cleanup?.()
   if (worker) {
     worker.terminate()
     worker = null
   }
   busy = false
+  activeReject = null
+  activeCleanup = null
+  reject?.(new Error('WORKER_CANCELLED'))
 }
 
 export function workerRunToEnd(

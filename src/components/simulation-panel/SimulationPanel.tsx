@@ -11,6 +11,7 @@ import {
   formatThroughput,
 } from '../../utils/formatters.ts'
 import { agvStatusLabel, eventTypeLabel, translateBottleneckReason } from '../../i18n/statusLabels.ts'
+import EventLogPanel from './EventLogPanel.tsx'
 
 const ExperimentCharts = lazy(() => import('./ExperimentCharts.tsx'))
 
@@ -22,45 +23,6 @@ function Metric({ label, value, tip }: { label: string; value: string; tip?: str
     </div>
   )
   return tip ? <Tooltip title={tip}>{content}</Tooltip> : content
-}
-
-function EventLogPanel() {
-  const { t } = useTranslation()
-  const eventLog = useSimulationStore((state) => state.snapshot.eventLog)
-  const selectedLogEntity = useSimulationStore((state) => state.selectedLogEntity)
-  const setSelectedLogEntity = useSimulationStore((state) => state.setSelectedLogEntity)
-  const entities = useMemo(() => {
-    const ids = new Set(eventLog.map((entry) => entry.entityId))
-    return [...ids]
-  }, [eventLog])
-  const filtered = selectedLogEntity
-    ? eventLog.filter((entry) => entry.entityId === selectedLogEntity)
-    : eventLog
-
-  return (
-    <div>
-      <div className="task-config" style={{ marginBottom: 6 }}>
-        <Select
-          size="small"
-          allowClear
-          placeholder={t('simPanel.log.filterEntity')}
-          style={{ width: 180 }}
-          value={selectedLogEntity}
-          options={entities.map((id) => ({ value: id, label: id }))}
-          onChange={(value) => setSelectedLogEntity(value)}
-        />
-        <span className="panel-hint">{t('simPanel.log.count', { count: filtered.length })}</span>
-      </div>
-      <div className="event-list log-scroll">
-        {filtered.length === 0 && <div className="panel-hint">{t('simPanel.log.empty')}</div>}
-        {filtered.slice(-40).map((entry) => (
-          <div key={entry.id}>
-            t={entry.simulationTime.toFixed(2)} [{eventTypeLabel(entry.eventType, t)}] {entry.message}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 function TimelinePanel() {
@@ -225,7 +187,13 @@ export default function SimulationPanel() {
                       ))}
                     </div>
                   )}
-                  {lastError && <div className="sim-error">{lastError}</div>}
+                  {lastError && (
+                    <div className="sim-error">
+                      {lastError === 'MODEL_LOCKED' || lastError.startsWith('MODEL_LOCKED')
+                        ? t('messages.modelLocked')
+                        : lastError}
+                    </div>
+                  )}
                 </section>
 
                 <section>

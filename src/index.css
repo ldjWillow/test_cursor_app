@@ -399,6 +399,56 @@ body,
   cursor: grabbing;
 }
 
+.library-item-disabled,
+.device-library-locked .library-item {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: grayscale(0.2);
+}
+
+.library-item-disabled:active {
+  cursor: not-allowed;
+}
+
+.event-log-panel .event-log-row {
+  display: grid;
+  grid-template-columns: 72px minmax(80px, 140px) minmax(60px, 120px) 1fr;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(36, 48, 68, 0.6);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.event-log-panel .log-virtual {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.event-log-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted, #8b9bb4);
+}
+
+.event-log-type {
+  color: #6ea8fe;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-log-entity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-log-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .library-swatch {
   width: 10px;
   height: 10px;
@@ -653,3 +703,17 @@ body,
   fill: #e8edf5 !important;
   border-bottom: 1px solid var(--line) !important;
 }
+
+.app-boot {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  color: #9fb0c7;
+  font-family: 'Noto Sans SC', 'IBM Plex Sans', sans-serif;
+  letter-spacing: 0.04em;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(61, 139, 253, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 90% 10%, rgba(34, 211, 238, 0.1), transparent 55%),
+    #10161f;
+}
+
