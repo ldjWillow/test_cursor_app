@@ -121,9 +121,6 @@ export function buildConnectionUrl(conn: EndpointConnInput): { url: string; disp
   }
 
   const secureRequired = isBrowserSecureContext()
-  if (secureRequired === false && !allowsCleartext() && typeof location !== 'undefined' && location.protocol === 'https:') {
-    throw new ConnectionEndpointError('MIXED_CONTENT', 'HTTPS 页面禁止连接明文 HTTP/WS 端点')
-  }
 
   if (conn.protocol === 'HTTP') {
     if (secureRequired) {
