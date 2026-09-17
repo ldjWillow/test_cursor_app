@@ -15,6 +15,16 @@ export default defineConfig({
     port: 5173,
     allowedHosts: true,
   },
+  preview: {
+    host: true,
+    port: 4173,
+    allowedHosts: true,
+    strictPort: true,
+  },
+  build: {
+    sourcemap: false,
+    chunkSizeWarningLimit: 3500,
+  },
   test: {
     globals: true,
     environment: 'jsdom',

@@ -10,9 +10,12 @@
     "build": "tsc -b && vite build",
     "build:pages": "tsc -b && VITE_BASE=/test_cursor_app/ vite build --outDir docs --emptyOutDir && cp docs/index.html docs/404.html && touch docs/.nojekyll",
     "lint": "oxlint",
-    "preview": "vite preview",
+    "preview": "vite preview --host 0.0.0.0 --port 4173 --strictPort",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "serve:prod": "npm run build && npm run preview",
+    "healthcheck": "node scripts/healthcheck.mjs",
+    "healthcheck:local": "node scripts/healthcheck.mjs http://127.0.0.1:4173"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

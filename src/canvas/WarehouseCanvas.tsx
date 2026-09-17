@@ -18,6 +18,7 @@ import { DeviceType, SimulationStatus } from '../types/index.ts'
 import type { DeviceType as DeviceTypeName } from '../types/index.ts'
 import { useSimulationStore } from '../store/simulationStore.ts'
 import { useDigitalTwinStore } from '../store/digitalTwinStore.ts'
+import { isModelEditable } from '../utils/modelLock.ts'
 
 const nodeTypes = {
   device: DeviceNode,
@@ -42,6 +43,7 @@ function CanvasInner() {
   const simStatus = useSimulationStore((state) => state.status)
   const setSelectedLogEntity = useSimulationStore((state) => state.setSelectedLogEntity)
   const { screenToFlowPosition } = useReactFlow()
+  const editable = isModelEditable(simStatus)
 
   const displayNodes = useMemo(() => {
     if (
@@ -65,11 +67,9 @@ function CanvasInner() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      const status = useSimulationStore.getState().status
-      const nextChanges =
-        status === SimulationStatus.Idle
-          ? changes
-          : changes.filter((change) => change.type !== 'position')
+      const nextChanges = isModelEditable()
+        ? changes
+        : changes.filter((change) => change.type === 'select')
       if (nextChanges.length === 0) {
         return
       }
@@ -80,6 +80,10 @@ function CanvasInner() {
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
+      if (!isModelEditable()) {
+        // Selection is handled by onSelectionChange; block remove/update while locked.
+        return
+      }
       setEdges(applyEdgeChanges(changes, useProjectStore.getState().edges))
     },
     [setEdges],
@@ -87,6 +91,9 @@ function CanvasInner() {
 
   const onConnect = useCallback(
     (connection: Connection) => {
+      if (!isModelEditable()) {
+        return
+      }
       connect(connection)
     },
     [connect],
@@ -95,6 +102,9 @@ function CanvasInner() {
   const onDrop = useCallback(
     (event: DragEvent) => {
       event.preventDefault()
+      if (!isModelEditable()) {
+        return
+      }
       const type = event.dataTransfer.getData('application/warehousesim') as DeviceTypeName
       const templateId = event.dataTransfer.getData('application/warehousesim-template')
       if (!type) {
@@ -113,22 +123,38 @@ function CanvasInner() {
         return
       }
       const mod = event.metaKey || event.ctrlKey
+      const canEdit = isModelEditable()
       if (mod && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+        if (!canEdit) {
+          return
+        }
         event.preventDefault()
         undo()
       } else if (mod && (event.key.toLowerCase() === 'y' || (event.key.toLowerCase() === 'z' && event.shiftKey))) {
+        if (!canEdit) {
+          return
+        }
         event.preventDefault()
         redo()
       } else if (mod && event.key.toLowerCase() === 'c') {
         event.preventDefault()
         copySelected()
       } else if (mod && event.key.toLowerCase() === 'v') {
+        if (!canEdit) {
+          return
+        }
         event.preventDefault()
         pasteClipboard()
       } else if (mod && event.key.toLowerCase() === 'd') {
+        if (!canEdit) {
+          return
+        }
         event.preventDefault()
         duplicateSelected()
       } else if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (!canEdit) {
+          return
+        }
         // React Flow also handles delete; keep store in sync for selection-only deletes.
         if (useProjectStore.getState().selectedId) {
           event.preventDefault()
@@ -145,6 +171,10 @@ function CanvasInner() {
       nodes={displayNodes}
       edges={edges}
       nodeTypes={nodeTypes}
+      nodesDraggable={editable}
+      nodesConnectable={editable}
+      elementsSelectable={true}
+      edgesUpdatable={editable}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
@@ -163,11 +193,14 @@ function CanvasInner() {
         useDigitalTwinStore.getState().selectDevice(undefined)
       }}
       onNodeDragStop={(_event, _node, currentNodes) => {
+        if (!isModelEditable()) {
+          return
+        }
         useProjectStore.getState().commitNodePositions(currentNodes)
       }}
       onDragOver={(event) => {
         event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
+        event.dataTransfer.dropEffect = editable ? 'move' : 'none'
       }}
       onDrop={onDrop}
       deleteKeyCode={null}

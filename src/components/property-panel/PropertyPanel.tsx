@@ -9,15 +9,18 @@ import { round } from '../../utils/math.ts'
 import { formatMeters, formatPercent, formatSeconds, formatSpeed } from '../../utils/formatters.ts'
 import type { AgvRuntimeState } from '../../twin/types.ts'
 import { agvStatusLabel, deviceTypeLabel } from '../../i18n/statusLabels.ts'
+import { isModelEditable } from '../../utils/modelLock.ts'
 
 function NumberField({
   label,
   value,
   onChange,
+  disabled,
 }: {
   label: string
   value: number
   onChange: (value: number) => void
+  disabled?: boolean
 }) {
   return (
     <label className="prop-field">
@@ -25,6 +28,7 @@ function NumberField({
       <InputNumber
         size="small"
         value={value}
+        disabled={disabled}
         onChange={(next) => onChange(typeof next === 'number' ? next : 0)}
         style={{ width: '100%' }}
       />
@@ -32,7 +36,7 @@ function NumberField({
   )
 }
 
-function ParamFields({ device }: { device: PlacedDevice }) {
+function ParamFields({ device, disabled }: { device: PlacedDevice; disabled: boolean }) {
   const { t } = useTranslation()
   const update = (params: DeviceParams) => useProjectStore.getState().updateDeviceParams(device.id, params)
   const params = device.params
@@ -43,11 +47,13 @@ function ParamFields({ device }: { device: PlacedDevice }) {
         <NumberField
           label={t('properties.params.generationInterval')}
           value={params.generationInterval}
+          disabled={disabled}
           onChange={(generationInterval) => update({ ...params, generationInterval })}
         />
         <NumberField
           label={t('properties.params.totalCount')}
           value={params.totalCount}
+          disabled={disabled}
           onChange={(totalCount) => update({ ...params, totalCount })}
         />
       </>
@@ -59,16 +65,19 @@ function ParamFields({ device }: { device: PlacedDevice }) {
         <NumberField
           label={t('properties.params.length')}
           value={params.length}
+          disabled={disabled}
           onChange={(length) => update({ ...params, length })}
         />
         <NumberField
           label={t('properties.params.speed')}
           value={params.speed}
+          disabled={disabled}
           onChange={(speed) => update({ ...params, speed })}
         />
         <NumberField
           label={t('properties.params.capacity')}
           value={params.capacity}
+          disabled={disabled}
           onChange={(capacity) => update({ ...params, capacity })}
         />
       </>
@@ -80,36 +89,43 @@ function ParamFields({ device }: { device: PlacedDevice }) {
         <NumberField
           label={t('properties.params.maxSpeed')}
           value={params.speed}
+          disabled={disabled}
           onChange={(speed) => update({ ...params, speed })}
         />
         <NumberField
           label={t('properties.params.capacity')}
           value={params.capacity}
+          disabled={disabled}
           onChange={(capacity) => update({ ...params, capacity })}
         />
         <NumberField
           label={t('properties.params.loadTime')}
           value={params.loadTime}
+          disabled={disabled}
           onChange={(loadTime) => update({ ...params, loadTime })}
         />
         <NumberField
           label={t('properties.params.unloadTime')}
           value={params.unloadTime}
+          disabled={disabled}
           onChange={(unloadTime) => update({ ...params, unloadTime })}
         />
         <NumberField
           label={t('properties.params.batteryCapacity')}
           value={params.batteryCapacity}
+          disabled={disabled}
           onChange={(batteryCapacity) => update({ ...params, batteryCapacity })}
         />
         <NumberField
           label={t('properties.params.currentBattery')}
           value={params.currentBattery}
+          disabled={disabled}
           onChange={(currentBattery) => update({ ...params, currentBattery })}
         />
         <NumberField
           label={t('properties.params.chargeThreshold')}
           value={params.chargeThreshold}
+          disabled={disabled}
           onChange={(chargeThreshold) => update({ ...params, chargeThreshold })}
         />
       </>
@@ -118,15 +134,22 @@ function ParamFields({ device }: { device: PlacedDevice }) {
   if (device.type === DeviceType.Rack && 'rows' in params) {
     return (
       <>
-        <NumberField label={t('properties.params.rows')} value={params.rows} onChange={(rows) => update({ ...params, rows })} />
+        <NumberField
+          label={t('properties.params.rows')}
+          value={params.rows}
+          disabled={disabled}
+          onChange={(rows) => update({ ...params, rows })}
+        />
         <NumberField
           label={t('properties.params.columns')}
           value={params.columns}
+          disabled={disabled}
           onChange={(columns) => update({ ...params, columns })}
         />
         <NumberField
           label={t('properties.params.levels')}
           value={params.levels}
+          disabled={disabled}
           onChange={(levels) => update({ ...params, levels })}
         />
       </>
@@ -138,16 +161,19 @@ function ParamFields({ device }: { device: PlacedDevice }) {
         <NumberField
           label={t('properties.params.horizontalSpeed')}
           value={params.horizontalSpeed}
+          disabled={disabled}
           onChange={(horizontalSpeed) => update({ ...params, horizontalSpeed })}
         />
         <NumberField
           label={t('properties.params.verticalSpeed')}
           value={params.verticalSpeed}
+          disabled={disabled}
           onChange={(verticalSpeed) => update({ ...params, verticalSpeed })}
         />
         <NumberField
           label={t('properties.params.forkTime')}
           value={params.forkTime}
+          disabled={disabled}
           onChange={(forkTime) => update({ ...params, forkTime })}
         />
       </>
@@ -159,11 +185,13 @@ function ParamFields({ device }: { device: PlacedDevice }) {
         <NumberField
           label={t('properties.params.processTime')}
           value={params.processTime}
+          disabled={disabled}
           onChange={(processTime) => update({ ...params, processTime })}
         />
         <NumberField
           label={t('properties.params.capacity')}
           value={params.capacity}
+          disabled={disabled}
           onChange={(capacity) => update({ ...params, capacity })}
         />
       </>
@@ -172,7 +200,7 @@ function ParamFields({ device }: { device: PlacedDevice }) {
   return <div className="panel-hint">{t('properties.params.none')}</div>
 }
 
-function EdgeFields({ edge }: { edge: ProjectEdge }) {
+function EdgeFields({ edge, disabled }: { edge: ProjectEdge; disabled: boolean }) {
   const { t } = useTranslation()
   const updateEdge = (patch: Partial<ProjectEdge>) => {
     useProjectStore.getState().updateEdge(edge.id, patch)
@@ -188,11 +216,13 @@ function EdgeFields({ edge }: { edge: ProjectEdge }) {
       <NumberField
         label={t('properties.params.distance')}
         value={edge.distance}
+        disabled={disabled}
         onChange={(distance) => updateEdge({ distance })}
       />
       <NumberField
         label={t('properties.params.edgeMaxSpeed')}
         value={edge.maxSpeed}
+        disabled={disabled}
         onChange={(maxSpeed) => updateEdge({ maxSpeed })}
       />
     </>
@@ -206,6 +236,8 @@ export default function PropertyPanel() {
   const selectedId = useProjectStore((state) => state.selectedId)
   const selectedKind = useProjectStore((state) => state.selectedKind)
   const document = useProjectStore((state) => state.document)
+  const simStatus = useSimulationStore((state) => state.status)
+  const editable = isModelEditable(simStatus)
   const twinDevice = useDigitalTwinStore((state) =>
     selectedId ? state.twin.devices[selectedId] : undefined,
   )
@@ -217,8 +249,11 @@ export default function PropertyPanel() {
   const agvTwin = twinDevice?.type === 'agv' ? (twinDevice as AgvRuntimeState) : undefined
 
   return (
-    <aside className="panel property-panel">
+    <aside className={`panel property-panel${editable ? '' : ' property-panel-locked'}`}>
       <div className="panel-title">{t('properties.title')}</div>
+      {!editable && (
+        <div className="panel-hint">{t('properties.locked', { defaultValue: '仿真运行中，模型只读' })}</div>
+      )}
       {!selectedId && <div className="panel-hint">{t('properties.empty')}</div>}
       {selectedKind === 'device' && device && (
         <div className="prop-form">
@@ -228,6 +263,7 @@ export default function PropertyPanel() {
             <Input
               size="small"
               value={device.name}
+              disabled={!editable}
               onChange={(event) => useProjectStore.getState().updateDeviceName(device.id, event.target.value)}
             />
           </label>
@@ -240,7 +276,7 @@ export default function PropertyPanel() {
           <div className="prop-static">
             {t('properties.position')}: {device.x.toFixed(0)}, {device.y.toFixed(0)}
           </div>
-          <ParamFields device={device} />
+          <ParamFields device={device} disabled={!editable} />
           {agvTwin && (
             <>
               <div className="panel-title panel-title-sub" style={{ marginTop: 10 }}>
@@ -290,7 +326,7 @@ export default function PropertyPanel() {
           )}
         </div>
       )}
-      {selectedKind === 'edge' && edge && <EdgeFields edge={edge} />}
+      {selectedKind === 'edge' && edge && <EdgeFields edge={edge} disabled={!editable} />}
     </aside>
   )
 }

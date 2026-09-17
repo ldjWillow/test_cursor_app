@@ -12,6 +12,7 @@ export default function App() {
   return (
     <ConfigProvider
       locale={locale}
+      autoInsertSpaceInButton={false}
       theme={{
         algorithm: theme.darkAlgorithm,
         token: {
@@ -20,11 +21,6 @@ export default function App() {
           borderRadius: 2,
           fontSize: 12,
           fontFamily: "'Noto Sans SC', 'IBM Plex Sans', 'Segoe UI', sans-serif",
-        },
-        components: {
-          Button: {
-            autoInsertSpace: false,
-          },
         },
       }}
     >

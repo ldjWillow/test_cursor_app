@@ -18,6 +18,7 @@ import { agvScenario, emptyProject } from '../domain/base/scenarios.ts'
 import { ensureSchemaVersion } from '../persistence/migrate.ts'
 import { createUuid } from '../utils/id.ts'
 import { distance } from '../utils/math.ts'
+import { assertModelEditable } from '../utils/modelLock.ts'
 
 const HISTORY_LIMIT = 50
 
@@ -152,6 +153,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   addDevice: (type, position, templateId) => {
+    if (!assertModelEditable('addDevice')) {
+      return
+    }
     const count = get().document.devices.filter((device) => device.type === type).length + 1
     const template = templateId ? templateById(templateId) : undefined
     const device: PlacedDevice = {
@@ -175,6 +179,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   updateDeviceParams: (id, params) => {
+    if (!assertModelEditable('updateDeviceParams')) {
+      return
+    }
     const document = {
       ...get().document,
       devices: get().document.devices.map((device) =>
@@ -185,6 +192,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   updateDeviceName: (id, name) => {
+    if (!assertModelEditable('updateDeviceName')) {
+      return
+    }
     const document = {
       ...get().document,
       devices: get().document.devices.map((device) =>
@@ -203,9 +213,26 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   setNodes: (nodes) => {
+    const current = get()
+    const positionsChanged =
+      nodes.length !== current.nodes.length ||
+      nodes.some((node) => {
+        const prev = current.nodes.find((item) => item.id === node.id)
+        return !prev || prev.position.x !== node.position.x || prev.position.y !== node.position.y
+      })
+    if (positionsChanged && !assertModelEditable('setNodes')) {
+      // Selection-only updates remain allowed while the model is locked.
+      set({
+        nodes: nodes.map((node) => {
+          const prev = current.nodes.find((item) => item.id === node.id)
+          return prev ? { ...node, position: prev.position } : node
+        }),
+      })
+      return
+    }
     // Live drag updates without history spam.
     const ids = new Set(nodes.map((node) => node.id))
-    const positioned = persistPositions(get().document, nodes)
+    const positioned = persistPositions(current.document, nodes)
     set({
       nodes,
       document: {
@@ -218,11 +245,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   commitNodePositions: (nodes) => {
+    if (!assertModelEditable('commitNodePositions')) {
+      return
+    }
     const positioned = persistPositions(get().document, nodes)
     pushHistory(get, set, positioned, { nodes })
   },
 
   setEdges: (edges) => {
+    if (!assertModelEditable('setEdges')) {
+      return
+    }
     const remaining = new Set(edges.map((edge) => edge.id))
     const document = {
       ...get().document,
@@ -232,6 +265,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   connect: (connection) => {
+    if (!assertModelEditable('connect')) {
+      return
+    }
     if (!connection.source || !connection.target) {
       return
     }
@@ -269,6 +305,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   removeSelected: () => {
+    if (!assertModelEditable('removeSelected')) {
+      return
+    }
     const { selectedId, selectedKind, document } = get()
     if (!selectedId) {
       return
@@ -296,6 +335,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   replaceTasks: (sourceId, targetId, count) => {
+    if (!assertModelEditable('replaceTasks')) {
+      return
+    }
     const tasks = Array.from({ length: count }, (_, index) => ({
       id: `task-${index + 1}`,
       sourceId,
@@ -324,6 +366,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   updateEdge: (id, patch) => {
+    if (!assertModelEditable('updateEdge')) {
+      return
+    }
     const document = {
       ...get().document,
       edges: get().document.edges.map((edge) => (edge.id === id ? { ...edge, ...patch } : edge)),
@@ -332,6 +377,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   undo: () => {
+    if (!assertModelEditable('undo')) {
+      return
+    }
     const { past, document, future } = get()
     const previous = past[past.length - 1]
     if (!previous) {
@@ -348,6 +396,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   redo: () => {
+    if (!assertModelEditable('redo')) {
+      return
+    }
     const { past, document, future } = get()
     const next = future[0]
     if (!next) {
@@ -375,6 +426,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   pasteClipboard: () => {
+    if (!assertModelEditable('pasteClipboard')) {
+      return
+    }
     const clip = get().clipboard
     if (!clip) {
       return
@@ -399,6 +453,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   duplicateSelected: () => {
+    if (!assertModelEditable('duplicateSelected')) {
+      return
+    }
     get().copySelected()
     get().pasteClipboard()
   },
