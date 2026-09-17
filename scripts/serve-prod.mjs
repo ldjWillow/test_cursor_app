@@ -120,7 +120,7 @@ app.use('/gateway', (req, res) => {
   proxyHttp(req, res, targetPath)
 })
 
-app.get('*', (req, res) => {
+app.use((req, res) => {
   const indexPath = join(distDir, 'index.html')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
