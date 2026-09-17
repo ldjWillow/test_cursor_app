@@ -1,21 +1,30 @@
-import { Button, InputNumber, Select, Table, Tabs } from 'antd'
+import { Button, InputNumber, Select, Table, Tabs, Tooltip } from 'antd'
 import ReactECharts from 'echarts-for-react'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSimulationStore } from '../../store/simulationStore.ts'
 import { useProjectStore } from '../../store/projectStore.ts'
 import { DeviceType } from '../../types/index.ts'
 import { round } from '../../utils/math.ts'
+import {
+  formatPercent,
+  formatSeconds,
+  formatThroughput,
+} from '../../utils/formatters.ts'
+import { agvStatusLabel, eventTypeLabel, translateBottleneckReason } from '../../i18n/statusLabels.ts'
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
+function Metric({ label, value, tip }: { label: string; value: string; tip?: string }) {
+  const content = (
     <div className="metric">
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
   )
+  return tip ? <Tooltip title={tip}>{content}</Tooltip> : content
 }
 
 function ExperimentCharts() {
+  const { t } = useTranslation()
   const summaries = useSimulationStore((state) => state.experimentSummaries)
   const deltas = useSimulationStore((state) => state.scenarioDeltas)
   const ordered = useMemo(
@@ -24,7 +33,7 @@ function ExperimentCharts() {
   )
 
   if (ordered.length === 0) {
-    return <div className="panel-hint">Run Experiment to populate scenario comparison charts.</div>
+    return <div className="panel-hint">{t('simPanel.experiment.emptyCharts')}</div>
   }
 
   const categories = ordered.map((item) => String(item.agvCount))
@@ -32,18 +41,46 @@ function ExperimentCharts() {
   const waiting = ordered.map((item) => round(item.averageWaitingTime.mean, 2))
   const util = ordered.map((item) => round(item.agvUtilization.mean * 100, 2))
 
+  const seriesNames = [
+    t('chart.series.throughput'),
+    t('chart.series.avgWait'),
+    t('chart.series.agvUtil'),
+  ]
+
   const option = {
     backgroundColor: 'transparent',
     textStyle: { color: '#c5d0de' },
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['Throughput /h', 'Avg Wait s', 'AGV Util %'], textStyle: { color: '#9aa8bd' } },
-    grid: { left: 48, right: 24, top: 36, bottom: 28 },
-    xAxis: { type: 'category', name: 'AGV Count', data: categories, axisLabel: { color: '#9aa8bd' } },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: Array<{ axisValue: string; seriesName: string; data: number }>) => {
+        const count = params[0]?.axisValue ?? ''
+        const lines = [t('chart.tooltip.scenario', { count })]
+        for (const item of params) {
+          if (item.seriesName === seriesNames[0]) {
+            lines.push(t('chart.tooltip.throughput', { value: item.data }))
+          } else if (item.seriesName === seriesNames[1]) {
+            lines.push(t('chart.tooltip.avgWait', { value: item.data }))
+          } else {
+            lines.push(t('chart.tooltip.util', { value: item.data }))
+          }
+        }
+        return lines.join('<br/>')
+      },
+    },
+    legend: { data: seriesNames, textStyle: { color: '#9aa8bd' } },
+    grid: { left: 56, right: 24, top: 36, bottom: 36 },
+    xAxis: {
+      type: 'category',
+      name: t('chart.axis.agvCount'),
+      data: categories,
+      axisLabel: { color: '#9aa8bd' },
+      nameTextStyle: { color: '#9aa8bd' },
+    },
     yAxis: { type: 'value', axisLabel: { color: '#9aa8bd' }, splitLine: { lineStyle: { color: '#2a3545' } } },
     series: [
-      { name: 'Throughput /h', type: 'line', data: throughput },
-      { name: 'Avg Wait s', type: 'line', data: waiting },
-      { name: 'AGV Util %', type: 'line', data: util },
+      { name: seriesNames[0], type: 'line', data: throughput },
+      { name: seriesNames[1], type: 'line', data: waiting },
+      { name: seriesNames[2], type: 'line', data: util },
     ],
   }
 
@@ -53,19 +90,17 @@ function ExperimentCharts() {
       <div className="delta-list">
         {deltas.map((delta) => (
           <div key={`${delta.fromScenarioId}-${delta.toScenarioId}`} className="delta-item">
-            <strong>
-              {delta.fromAgvCount} → {delta.toAgvCount} AGV
-            </strong>
+            <strong>{t('chart.delta.agvChange', { from: delta.fromAgvCount, to: delta.toAgvCount })}</strong>
             <span className={delta.throughputDeltaPct >= 0 ? 'delta-up' : 'delta-down'}>
-              Throughput {delta.throughputDeltaPct >= 0 ? '+' : ''}
+              {t('chart.delta.throughput')} {delta.throughputDeltaPct >= 0 ? '+' : ''}
               {round(delta.throughputDeltaPct, 1)}%
             </span>
             <span className={delta.averageWaitingDeltaPct <= 0 ? 'delta-up' : 'delta-down'}>
-              Avg Wait {delta.averageWaitingDeltaPct >= 0 ? '+' : ''}
+              {t('chart.delta.avgWait')} {delta.averageWaitingDeltaPct >= 0 ? '+' : ''}
               {round(delta.averageWaitingDeltaPct, 1)}%
             </span>
             <span>
-              AGV Util {delta.agvUtilizationDeltaPct >= 0 ? '+' : ''}
+              {t('chart.delta.agvUtil')} {delta.agvUtilizationDeltaPct >= 0 ? '+' : ''}
               {round(delta.agvUtilizationDeltaPct, 1)}%
             </span>
           </div>
@@ -76,6 +111,7 @@ function ExperimentCharts() {
 }
 
 function EventLogPanel() {
+  const { t } = useTranslation()
   const eventLog = useSimulationStore((state) => state.snapshot.eventLog)
   const selectedLogEntity = useSimulationStore((state) => state.selectedLogEntity)
   const setSelectedLogEntity = useSimulationStore((state) => state.setSelectedLogEntity)
@@ -93,19 +129,19 @@ function EventLogPanel() {
         <Select
           size="small"
           allowClear
-          placeholder="Filter entity"
+          placeholder={t('simPanel.log.filterEntity')}
           style={{ width: 180 }}
           value={selectedLogEntity}
           options={entities.map((id) => ({ value: id, label: id }))}
           onChange={(value) => setSelectedLogEntity(value)}
         />
-        <span className="panel-hint">{filtered.length} events</span>
+        <span className="panel-hint">{t('simPanel.log.count', { count: filtered.length })}</span>
       </div>
       <div className="event-list log-scroll">
-        {filtered.length === 0 && <div className="panel-hint">No events yet</div>}
+        {filtered.length === 0 && <div className="panel-hint">{t('simPanel.log.empty')}</div>}
         {filtered.slice(-40).map((entry) => (
           <div key={entry.id}>
-            t={entry.simulationTime.toFixed(2)} [{entry.eventType}] {entry.message}
+            t={entry.simulationTime.toFixed(2)} [{eventTypeLabel(entry.eventType, t)}] {entry.message}
           </div>
         ))}
       </div>
@@ -114,23 +150,24 @@ function EventLogPanel() {
 }
 
 function TimelinePanel() {
+  const { t } = useTranslation()
   const snapshot = useSimulationStore((state) => state.snapshot)
   const selectedId = useProjectStore((state) => state.selectedId)
   const agv = snapshot.devices.find(
     (device) => device.id === selectedId && device.type === DeviceType.Agv,
   )
   if (!agv) {
-    return <div className="panel-hint">Select an AGV to view its timeline.</div>
+    return <div className="panel-hint">{t('simPanel.timeline.emptySelection')}</div>
   }
   const segments = agv.timeline ?? []
   return (
     <div>
       <div className="panel-title">{agv.name}</div>
       <div className="event-list log-scroll">
-        {segments.length === 0 && <div className="panel-hint">No timeline segments</div>}
+        {segments.length === 0 && <div className="panel-hint">{t('simPanel.timeline.empty')}</div>}
         {segments.map((segment, index) => (
           <div key={`${segment.status}-${segment.startTime}-${index}`}>
-            {segment.startTime.toFixed(1)}-{segment.endTime.toFixed(1)} {segment.status}
+            {segment.startTime.toFixed(1)}-{segment.endTime.toFixed(1)} {agvStatusLabel(segment.status, t)}
           </div>
         ))}
       </div>
@@ -138,12 +175,24 @@ function TimelinePanel() {
         .filter((kpi) => kpi.id === agv.id)
         .map((kpi) => (
           <div key={kpi.id} className="agv-kpi">
-            <div>Travel: {round(kpi.travelDistance, 1)} m</div>
-            <div>Loaded: {round(kpi.loadedTravelDistance, 1)} m</div>
-            <div>Empty: {round(kpi.emptyTravelDistance, 1)} m</div>
-            <div>Empty Rate: {round(kpi.emptyTravelRatio * 100, 1)}%</div>
-            <div>Route Wait: {round(kpi.routeWaitingTime, 1)} s</div>
-            <div>Util: {round(kpi.utilization * 100, 1)}%</div>
+            <div>
+              {t('simPanel.timeline.travel')}: {round(kpi.travelDistance, 1)} m
+            </div>
+            <div>
+              {t('simPanel.timeline.loaded')}: {round(kpi.loadedTravelDistance, 1)} m
+            </div>
+            <div>
+              {t('simPanel.timeline.emptyDist')}: {round(kpi.emptyTravelDistance, 1)} m
+            </div>
+            <div>
+              {t('simPanel.timeline.emptyRate')}: {formatPercent(kpi.emptyTravelRatio)}
+            </div>
+            <div>
+              {t('simPanel.timeline.routeWait')}: {formatSeconds(kpi.routeWaitingTime)}
+            </div>
+            <div>
+              {t('simPanel.timeline.util')}: {formatPercent(kpi.utilization)}
+            </div>
           </div>
         ))}
     </div>
@@ -151,6 +200,7 @@ function TimelinePanel() {
 }
 
 export default function SimulationPanel() {
+  const { t } = useTranslation()
   const snapshot = useSimulationStore((state) => state.snapshot)
   const comparison = useSimulationStore((state) => state.comparison)
   const experimentSummaries = useSimulationStore((state) => state.experimentSummaries)
@@ -172,17 +222,36 @@ export default function SimulationPanel() {
 
   return (
     <footer className="simulation-panel">
+      <div className="sim-panel-header">
+        <div className="panel-title">{t('simPanel.title')}</div>
+      </div>
       <div className="sim-metrics">
-        <Metric label="Simulation Time" value={`${round(snapshot.time, 2)} s`} />
-        <Metric label="Waiting Tasks" value={String(snapshot.waitingTasks)} />
-        <Metric label="Running Tasks" value={String(snapshot.runningTasks)} />
-        <Metric label="Completed Tasks" value={String(snapshot.completedTasks)} />
-        <Metric label="Throughput" value={`${round(stats.throughput, 2)} /h`} />
-        <Metric label="Avg Wait" value={`${round(stats.averageWaitingTime, 2)} s`} />
-        <Metric label="Route Wait" value={`${round(stats.routeWaitingTime, 2)} s`} />
-        <Metric label="Empty Travel" value={`${round(stats.emptyTravelRatio * 100, 1)}%`} />
-        <Metric label="AGV Util" value={`${round(stats.agvUtilization * 100, 1)}%`} />
-        <Metric label="Stacker Util" value={`${round(stats.stackerUtilization * 100, 1)}%`} />
+        <Metric label={t('kpi.simulationTime')} value={formatSeconds(snapshot.time, 2)} />
+        <Metric label={t('kpi.waitingTasks')} value={String(snapshot.waitingTasks)} />
+        <Metric label={t('kpi.runningTasks')} value={String(snapshot.runningTasks)} />
+        <Metric label={t('kpi.completedTasks')} value={String(snapshot.completedTasks)} />
+        <Metric
+          label={t('kpi.throughput')}
+          value={formatThroughput(stats.throughput)}
+          tip={t('tooltip.throughput')}
+        />
+        <Metric label={t('kpi.avgWait')} value={formatSeconds(stats.averageWaitingTime, 2)} />
+        <Metric
+          label={t('kpi.routeWait')}
+          value={formatSeconds(stats.routeWaitingTime, 2)}
+          tip={t('tooltip.routeWait')}
+        />
+        <Metric
+          label={t('kpi.emptyTravel')}
+          value={formatPercent(stats.emptyTravelRatio)}
+          tip={t('tooltip.emptyTravel')}
+        />
+        <Metric
+          label={t('kpi.agvUtil')}
+          value={formatPercent(stats.agvUtilization)}
+          tip={t('tooltip.utilization')}
+        />
+        <Metric label={t('kpi.stackerUtil')} value={formatPercent(stats.stackerUtilization)} />
       </div>
 
       <Tabs
@@ -190,16 +259,18 @@ export default function SimulationPanel() {
         items={[
           {
             key: 'ops',
-            label: 'Operations',
+            label: t('simPanel.tabs.operations'),
             children: (
               <div className="sim-columns">
                 <section>
-                  <div className="panel-title">Event Queue</div>
+                  <div className="panel-title">{t('simPanel.eventQueue')}</div>
                   <div className="event-list">
-                    {snapshot.eventQueue.length === 0 && <div className="panel-hint">Empty</div>}
+                    {snapshot.eventQueue.length === 0 && (
+                      <div className="panel-hint">{t('simPanel.eventQueueEmpty')}</div>
+                    )}
                     {snapshot.eventQueue.slice(0, 8).map((event) => (
                       <div key={event.id}>
-                        t={event.time.toFixed(2)} {event.type}
+                        t={event.time.toFixed(2)} {eventTypeLabel(event.type, t)}
                         {event.targetId ? ` @ ${event.targetId}` : ''}
                       </div>
                     ))}
@@ -207,21 +278,31 @@ export default function SimulationPanel() {
                 </section>
 
                 <section>
-                  <div className="panel-title">Bottlenecks</div>
-                  {stats.bottlenecks.length === 0 && <div className="panel-hint">None</div>}
+                  <div className="panel-title">{t('simPanel.bottlenecks')}</div>
+                  {stats.bottlenecks.length === 0 && (
+                    <div className="panel-hint">{t('simPanel.bottlenecksNone')}</div>
+                  )}
                   {stats.bottlenecks.map((item) => (
                     <div key={`${item.id}-${item.reason}`}>
-                      {item.name}: {item.reason}
+                      {item.name}: {translateBottleneckReason(item.reason, t)}
                     </div>
                   ))}
                   <div className="panel-title" style={{ marginTop: 8 }}>
-                    Waiting breakdown
+                    {t('simPanel.waitingBreakdown')}
                   </div>
                   <div className="event-list">
-                    <div>Task: {round(stats.waiting.taskWaitingTime, 1)} s</div>
-                    <div>Route: {round(stats.waiting.routeWaitingTime, 1)} s</div>
-                    <div>Resource: {round(stats.waiting.resourceWaitingTime, 1)} s</div>
-                    <div>Loading: {round(stats.waiting.loadingWaitingTime, 1)} s</div>
+                    <div>
+                      {t('simPanel.waiting.task')}: {formatSeconds(stats.waiting.taskWaitingTime)}
+                    </div>
+                    <div>
+                      {t('simPanel.waiting.route')}: {formatSeconds(stats.waiting.routeWaitingTime)}
+                    </div>
+                    <div>
+                      {t('simPanel.waiting.resource')}: {formatSeconds(stats.waiting.resourceWaitingTime)}
+                    </div>
+                    <div>
+                      {t('simPanel.waiting.loading')}: {formatSeconds(stats.waiting.loadingWaitingTime)}
+                    </div>
                   </div>
                   {validationErrors.length > 0 && (
                     <div className="sim-error">
@@ -234,23 +315,23 @@ export default function SimulationPanel() {
                 </section>
 
                 <section>
-                  <div className="panel-title">Transport Tasks</div>
+                  <div className="panel-title">{t('simPanel.transportTasks')}</div>
                   <div className="task-config">
                     <Select
                       size="small"
-                      placeholder="Pickup"
+                      placeholder={t('simPanel.pickup')}
                       options={options}
                       value={sourceId}
                       onChange={setSourceId}
-                      style={{ width: 120 }}
+                      style={{ minWidth: 120 }}
                     />
                     <Select
                       size="small"
-                      placeholder="Dropoff"
+                      placeholder={t('simPanel.dropoff')}
                       options={options}
                       value={targetId}
                       onChange={setTargetId}
-                      style={{ width: 120 }}
+                      style={{ minWidth: 120 }}
                     />
                     <InputNumber
                       size="small"
@@ -268,50 +349,53 @@ export default function SimulationPanel() {
                         }
                       }}
                     >
-                      Apply tasks
+                      {t('simPanel.applyTasks')}
                     </Button>
-                    <span className="panel-hint">{document.tasks.length} tasks in model</span>
+                    <span className="panel-hint">
+                      {t('simPanel.tasksInModel', { count: document.tasks.length })}
+                    </span>
                   </div>
                 </section>
 
                 <section className="comparison-section">
-                  <div className="panel-title">AGV comparison</div>
+                  <div className="panel-title">{t('simPanel.agvComparison')}</div>
                   <Table
                     size="small"
                     pagination={false}
                     rowKey="agvCount"
                     dataSource={comparison}
+                    locale={{ emptyText: t('empty.data') }}
                     columns={[
-                      { title: 'AGVs', dataIndex: 'agvCount', width: 60 },
+                      { title: t('simPanel.comparison.agvs'), dataIndex: 'agvCount', width: 72 },
                       {
-                        title: 'Throughput /h',
+                        title: t('simPanel.comparison.throughput'),
                         dataIndex: 'throughput',
-                        render: (value: number) => round(value, 1),
+                        render: (value: number) => formatThroughput(value),
                       },
                       {
-                        title: 'Util %',
+                        title: t('simPanel.comparison.util'),
                         dataIndex: 'utilization',
-                        render: (value: number) => round(value * 100, 1),
+                        render: (value: number) => formatPercent(value),
                       },
                       {
-                        title: 'Avg Wait s',
+                        title: t('simPanel.comparison.avgWait'),
                         dataIndex: 'averageWaitingTime',
-                        render: (value: number) => round(value, 2),
+                        render: (value: number) => formatSeconds(value, 2),
                       },
                       {
-                        title: 'Route Wait',
+                        title: t('simPanel.comparison.routeWait'),
                         dataIndex: 'routeWaitingTime',
-                        render: (value?: number) => round(value ?? 0, 1),
+                        render: (value?: number) => formatSeconds(value ?? 0),
                       },
                       {
-                        title: 'Empty %',
+                        title: t('simPanel.comparison.empty'),
                         dataIndex: 'emptyTravelRatio',
-                        render: (value?: number) => round((value ?? 0) * 100, 1),
+                        render: (value?: number) => formatPercent(value ?? 0),
                       },
                       {
-                        title: 'Cycle s',
+                        title: t('simPanel.comparison.cycle'),
                         dataIndex: 'averageCycleTime',
-                        render: (value: number) => round(value, 2),
+                        render: (value: number) => formatSeconds(value, 2),
                       },
                     ]}
                   />
@@ -321,7 +405,7 @@ export default function SimulationPanel() {
           },
           {
             key: 'experiment',
-            label: 'Experiment Results',
+            label: t('simPanel.tabs.experiment'),
             children: (
               <div className="experiment-layout">
                 <Table
@@ -329,28 +413,29 @@ export default function SimulationPanel() {
                   pagination={false}
                   rowKey="scenarioId"
                   dataSource={experimentSummaries}
+                  locale={{ emptyText: t('empty.experiment') }}
                   columns={[
-                    { title: 'Scenario', dataIndex: 'scenarioName' },
-                    { title: 'AGV', dataIndex: 'agvCount', width: 70 },
+                    { title: t('simPanel.experiment.scenario'), dataIndex: 'scenarioName' },
+                    { title: t('simPanel.experiment.agv'), dataIndex: 'agvCount', width: 80 },
                     {
-                      title: 'Throughput',
+                      title: t('simPanel.experiment.throughput'),
                       render: (_, row) =>
                         `${round(row.throughput.mean, 1)} ± ${round(row.throughput.std, 1)}`,
                     },
                     {
-                      title: 'Avg Wait',
-                      render: (_, row) => round(row.averageWaitingTime.mean, 1),
+                      title: t('simPanel.experiment.avgWait'),
+                      render: (_, row) => formatSeconds(row.averageWaitingTime.mean),
                     },
                     {
-                      title: 'Cycle',
-                      render: (_, row) => round(row.averageCycleTime.mean, 1),
+                      title: t('simPanel.experiment.cycle'),
+                      render: (_, row) => formatSeconds(row.averageCycleTime.mean),
                     },
                     {
-                      title: 'AGV Util',
-                      render: (_, row) => `${round(row.agvUtilization.mean * 100, 1)}%`,
+                      title: t('simPanel.experiment.agvUtil'),
+                      render: (_, row) => formatPercent(row.agvUtilization.mean),
                     },
                     {
-                      title: 'Completed',
+                      title: t('simPanel.experiment.completed'),
                       render: (_, row) => round(row.completedTasks.mean, 0),
                     },
                   ]}
@@ -361,12 +446,12 @@ export default function SimulationPanel() {
           },
           {
             key: 'log',
-            label: 'Event Log',
+            label: t('simPanel.tabs.eventLog'),
             children: <EventLogPanel />,
           },
           {
             key: 'timeline',
-            label: 'AGV Timeline',
+            label: t('simPanel.tabs.agvTimeline'),
             children: <TimelinePanel />,
           },
         ]}

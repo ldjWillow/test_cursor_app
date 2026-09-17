@@ -58,7 +58,7 @@ export async function importProject(file: File): Promise<ProjectDocument> {
   const text = await file.text()
   const parsed: unknown = JSON.parse(text)
   if (!isProjectDocument(parsed)) {
-    throw new Error('Invalid WarehouseSim project JSON')
+    throw new Error('INVALID_PROJECT_JSON')
   }
   return migrateProject(parsed)
 }

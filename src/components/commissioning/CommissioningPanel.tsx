@@ -1,14 +1,24 @@
 import { Button, Select, Table, Tag } from 'antd'
+import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useDigitalTwinStore } from '../../store/digitalTwinStore.ts'
 import { deviceRegistry } from '../../virtual/DeviceRegistry.ts'
 import { faultManager } from '../../virtual/FaultManager.ts'
 import { signalMapper } from '../../signal/SignalMapper.ts'
 import { useProjectStore } from '../../store/projectStore.ts'
 import { useSimulationStore } from '../../store/simulationStore.ts'
-import { useMemo, useState } from 'react'
 import { nextId } from '../../utils/id.ts'
+import {
+  commandStatusLabel,
+  deviceStatusLabel,
+  deviceTypeLabel,
+  operatingModeLabel,
+  simulationStatusLabel,
+} from '../../i18n/statusLabels.ts'
+import { formatLatencyMs } from '../../utils/formatters.ts'
 
 export default function CommissioningPanel() {
+  const { t } = useTranslation()
   const operatingMode = useDigitalTwinStore((state) => state.operatingMode)
   const setOperatingMode = useDigitalTwinStore((state) => state.setOperatingMode)
   const twin = useDigitalTwinStore((state) => state.twin)
@@ -32,43 +42,59 @@ export default function CommissioningPanel() {
 
   return (
     <div className="commissioning-panel">
-      <div className="panel-title">Virtual Commissioning</div>
+      <div className="panel-title">{t('commissioning.title')}</div>
       <div className="task-config" style={{ marginBottom: 8 }}>
         <Select
           size="small"
           value={operatingMode}
-          style={{ width: 140 }}
+          style={{ minWidth: 120 }}
           options={[
-            { value: 'simulation', label: 'Simulation' },
-            { value: 'emulation', label: 'Emulation' },
-            { value: 'replay', label: 'Replay' },
+            { value: 'simulation', label: t('toolbar.modeSimulation') },
+            { value: 'emulation', label: t('toolbar.modeEmulation') },
+            { value: 'replay', label: t('toolbar.modeReplay') },
           ]}
           onChange={setOperatingMode}
         />
         <Tag color={operatingMode === 'emulation' ? 'blue' : 'default'}>
-          {operatingMode.toUpperCase()}
+          {operatingModeLabel(operatingMode, t)}
         </Tag>
-        <Tag>{twin.status.toUpperCase()}</Tag>
-        <span className="panel-hint">Devices online: {deviceRows.length}</span>
+        <Tag>{simulationStatusLabel(twin.status, t)}</Tag>
+        <span className="panel-hint">{t('commissioning.devicesOnline', { count: deviceRows.length })}</span>
       </div>
 
       <div className="vc-grid">
         <section>
-          <div className="panel-title">Device Status</div>
+          <div className="panel-title">{t('commissioning.deviceStatus')}</div>
           <Table
             size="small"
             pagination={false}
             rowKey="deviceId"
             dataSource={deviceRows}
+            locale={{ emptyText: t('empty.data') }}
             columns={[
-              { title: 'Device', dataIndex: 'deviceId' },
-              { title: 'Type', dataIndex: 'type', width: 90 },
+              { title: t('commissioning.deviceTable.device'), dataIndex: 'deviceId' },
               {
-                title: 'State',
+                title: t('commissioning.deviceTable.type'),
+                dataIndex: 'type',
+                width: 90,
+                render: (value: string) => deviceTypeLabel(value, t),
+              },
+              {
+                title: t('commissioning.deviceTable.state'),
                 dataIndex: 'state',
                 render: (value: string, row) => (
-                  <Tag color={row.fault ? 'red' : value === 'RUNNING' || value === 'MOVING' ? 'green' : 'default'}>
-                    {value}
+                  <Tag
+                    color={
+                      row.fault
+                        ? 'red'
+                        : value === 'RUNNING' || value === 'MOVING'
+                          ? 'green'
+                          : value === 'WAITING' || value === 'WAITING_FOR_ROUTE'
+                            ? 'orange'
+                            : 'default'
+                    }
+                  >
+                    {deviceStatusLabel(value, t)}
                   </Tag>
                 ),
               },
@@ -77,12 +103,12 @@ export default function CommissioningPanel() {
         </section>
 
         <section>
-          <div className="panel-title">WCS Actions</div>
+          <div className="panel-title">{t('commissioning.wcsActions')}</div>
           <div className="task-config">
             <Select
               size="small"
-              placeholder="AGV"
-              style={{ width: 140 }}
+              placeholder={t('commissioning.placeholderAgv')}
+              style={{ minWidth: 140 }}
               options={agvOptions}
               value={selectedAgv}
               onChange={setSelectedAgv}
@@ -114,7 +140,7 @@ export default function CommissioningPanel() {
                 }
               }}
             >
-              WCS Assign Task
+              {t('commissioning.assignTask')}
             </Button>
             <Button
               size="small"
@@ -124,12 +150,16 @@ export default function CommissioningPanel() {
                 if (!selectedAgv) {
                   return
                 }
-                faultManager.injectNow(selectedAgv, 'FAULT', `${selectedAgv} FAULT injected`)
+                faultManager.injectNow(
+                  selectedAgv,
+                  'FAULT',
+                  t('commissioning.faultInjected', { id: selectedAgv }),
+                )
                 const device = deviceRegistry.get(selectedAgv) as { injectFault?: () => void } | undefined
                 device?.injectFault?.()
               }}
             >
-              Inject Fault
+              {t('commissioning.injectFault')}
             </Button>
             <Button
               size="small"
@@ -144,7 +174,7 @@ export default function CommissioningPanel() {
                 })
               }}
             >
-              START Conveyor
+              {t('commissioning.startConveyor')}
             </Button>
             <Button
               size="small"
@@ -159,13 +189,13 @@ export default function CommissioningPanel() {
                 })
               }}
             >
-              STOP Conveyor
+              {t('commissioning.stopConveyor')}
             </Button>
           </div>
           <div className="panel-title" style={{ marginTop: 8 }}>
-            Active Faults
+            {t('commissioning.activeFaults')}
           </div>
-          {faults.length === 0 && <div className="panel-hint">None</div>}
+          {faults.length === 0 && <div className="panel-hint">{t('commissioning.faultsNone')}</div>}
           {faults.map((fault) => (
             <div key={fault.id} className="sim-error">
               {fault.deviceId}: {fault.message}
@@ -174,40 +204,55 @@ export default function CommissioningPanel() {
         </section>
 
         <section>
-          <div className="panel-title">Command Monitor</div>
+          <div className="panel-title">{t('commissioning.commandMonitor')}</div>
           <Table
             size="small"
             pagination={false}
             rowKey="commandId"
             dataSource={commands}
+            locale={{ emptyText: t('empty.data') }}
             columns={[
-              { title: 'Cmd', dataIndex: 'commandType', width: 110 },
-              { title: 'Device', dataIndex: 'deviceId', width: 100 },
-              { title: 'Status', dataIndex: 'status', width: 90 },
-              { title: 'Latency', dataIndex: 'latencyMs', width: 70, render: (v: number) => `${v}ms` },
+              { title: t('commissioning.commandTable.cmd'), dataIndex: 'commandType', width: 120 },
+              { title: t('commissioning.commandTable.device'), dataIndex: 'deviceId', width: 100 },
+              {
+                title: t('commissioning.commandTable.status'),
+                dataIndex: 'status',
+                width: 90,
+                render: (value: string) => commandStatusLabel(value, t),
+              },
+              {
+                title: t('commissioning.commandTable.latency'),
+                dataIndex: 'latencyMs',
+                width: 80,
+                render: (v: number) => formatLatencyMs(v),
+              },
             ]}
           />
         </section>
 
         <section>
-          <div className="panel-title">Signal Watch</div>
+          <div className="panel-title">{t('commissioning.signalWatch')}</div>
           <Table
             size="small"
             pagination={false}
             rowKey="signal"
             dataSource={signals}
+            locale={{ emptyText: t('empty.signal') }}
             columns={[
-              { title: 'Signal', dataIndex: 'signal' },
+              { title: t('commissioning.signalTable.signal'), dataIndex: 'signal' },
               {
-                title: 'Value',
+                title: t('commissioning.signalTable.value'),
                 dataIndex: 'value',
                 render: (value: unknown) => String(value),
               },
-              { title: 'Source', dataIndex: 'source' },
+              { title: t('commissioning.signalTable.source'), dataIndex: 'source' },
             ]}
           />
           <div className="panel-hint" style={{ marginTop: 6 }}>
-            Twin devices: {Object.keys(twin.devices).length} · Event log: {snapshot.eventLog.length}
+            {t('commissioning.twinSummary', {
+              devices: Object.keys(twin.devices).length,
+              events: snapshot.eventLog.length,
+            })}
           </div>
         </section>
       </div>

@@ -1,6 +1,7 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import { useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Group, InstancedMesh } from 'three'
 import { Color, Object3D } from 'three'
 import { useDigitalTwinStore } from '../store/digitalTwinStore.ts'
@@ -236,6 +237,7 @@ function SceneContent() {
 }
 
 export default function WarehouseScene3D() {
+  const { t } = useTranslation()
   return (
     <div className="canvas3d-shell">
       <Canvas shadows camera={{ position: [18, 16, 22], fov: 45 }}>
@@ -243,7 +245,7 @@ export default function WarehouseScene3D() {
       </Canvas>
       <div className="camera-toolbar">
         <button type="button" onClick={() => useDigitalTwinStore.getState().selectDevice(undefined)}>
-          Fit / Clear
+          {t('view3d.fitClear')}
         </button>
       </div>
     </div>
