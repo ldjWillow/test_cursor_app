@@ -383,6 +383,14 @@ const zhCN = {
     connectionFailed: '连接失败，请检查网络地址和协议配置。',
     taskCreated: '任务创建成功。',
     commandRejected: '设备当前状态不允许执行该命令。',
+    workerBusy: '后台任务忙碌中，请稍后再试。',
+    workerTimeout: '后台任务超时，请缩小实验规模后重试。',
+    maxEvents: '事件数量超过上限，请缩短仿真或降低生成频率。',
+    modelLocked: '仿真运行中，模型已锁定，请先停止或重置后再编辑。',
+  },
+  batch: {
+    progress: '后台进度 {{percent}}% — {{message}}',
+    cancel: '取消后台任务',
   },
   empty: {
     data: '暂无数据',

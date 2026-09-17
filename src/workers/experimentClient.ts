@@ -1,4 +1,10 @@
-import type { ProjectDocument, SimulationSnapshot, AgvComparisonRow, ExperimentResult, ReplicationSummary } from '../types/index.ts'
+import type {
+  ProjectDocument,
+  SimulationSnapshot,
+  AgvComparisonRow,
+  ExperimentResult,
+  ReplicationSummary,
+} from '../types/index.ts'
 import type { WorkerRequest, WorkerResponse } from './experimentWorker.ts'
 import { nextId } from '../utils/id.ts'
 
@@ -6,6 +12,12 @@ type ExperimentPayload = {
   results: ExperimentResult[]
   summaries: ReplicationSummary[]
 }
+
+type WorkerPayload = Exclude<WorkerRequest, never> extends infer R
+  ? R extends { id: string }
+    ? Omit<R, 'id'>
+    : never
+  : never
 
 let worker: Worker | null = null
 let busy = false
@@ -19,7 +31,7 @@ function getWorker(): Worker {
 }
 
 function runTask<T>(
-  request: Omit<WorkerRequest, 'id'>,
+  request: WorkerPayload,
   onProgress?: (progress: number, message: string) => void,
 ): Promise<T> {
   if (busy) {
@@ -57,7 +69,7 @@ function runTask<T>(
     }
 
     instance.addEventListener('message', onMessage)
-    instance.postMessage({ ...request, id } satisfies WorkerRequest)
+    instance.postMessage({ ...request, id } as WorkerRequest)
   }).finally(() => {
     busy = false
   })

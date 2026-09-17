@@ -1,10 +1,12 @@
-import { Button, Dropdown, Input, Select, Space, Tooltip, Typography } from 'antd'
+import { useState } from 'react'
+import { Button, Dropdown, Input, Modal, Select, Space, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { SimulationSpeed, SimulationStatus } from '../../types/index.ts'
 import { useProjectStore } from '../../store/projectStore.ts'
 import { useSimulationStore } from '../../store/simulationStore.ts'
 import { useDigitalTwinStore } from '../../store/digitalTwinStore.ts'
+import { useUiStore } from '../../store/uiStore.ts'
 import { simulationRuntime } from '../../simulation/SimulationRuntime.ts'
 import { exportProject, importProject, loadProject, saveProject } from '../../persistence/projectPersistence.ts'
 import {
@@ -15,11 +17,17 @@ import {
   standardWarehouseScenario,
 } from '../../domain/base/scenarios.ts'
 import { automatedWarehouseDemo } from '../../domain/base/demoScenes.ts'
-import { compareAgvCounts, runAgvExperiment } from '../../simulation/experiments.ts'
 import { experimentManager } from '../../experiment/ExperimentManager.ts'
 import { modelValidator } from '../../validation/ModelValidator.ts'
 import { deviceRegistry } from '../../virtual/DeviceRegistry.ts'
-import { replayEngine } from '../../replay/ReplayEngine.ts'
+import { replayController } from '../../replay/ReplayController.ts'
+import { buildDigitalTwinState } from '../../twin/fromSnapshot.ts'
+import {
+  workerCompareAgvs,
+  workerRunExperiment,
+  workerRunToEnd,
+} from '../../workers/experimentClient.ts'
+import { isModelEditable } from '../../utils/modelLock.ts'
 import {
   operatingModeLabel,
   simulationStatusLabel,
@@ -30,6 +38,20 @@ import { formatSimClock } from '../../utils/formatters.ts'
 import { persistLocale, type AppLocale } from '../../i18n/index.ts'
 
 const SPEEDS: SimulationSpeed[] = [1, 5, 10, 50]
+
+function mapWorkerError(error: unknown, t: (key: string, options?: Record<string, string>) => string): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message === 'WORKER_BUSY') {
+    return t('messages.workerBusy', { defaultValue: '后台任务忙碌中，请稍后再试。' })
+  }
+  if (message === 'WORKER_TIMEOUT') {
+    return t('messages.workerTimeout', { defaultValue: '后台任务超时，请缩小实验规模后重试。' })
+  }
+  if (message.startsWith('MAX_EVENTS')) {
+    return t('messages.maxEvents', { defaultValue: '事件数量超过上限，请缩短仿真或降低生成频率。' })
+  }
+  return message
+}
 
 export default function Toolbar() {
   const { t, i18n } = useTranslation()
@@ -51,6 +73,9 @@ export default function Toolbar() {
   const operatingMode = useDigitalTwinStore((state) => state.operatingMode)
   const setOperatingMode = useDigitalTwinStore((state) => state.setOperatingMode)
   const snapshot = useSimulationStore((state) => state.snapshot)
+  const [batchBusy, setBatchBusy] = useState(false)
+
+  const modelEditable = isModelEditable(status)
 
   const validateOrError = (): boolean => {
     const issues = modelValidator.validate(document)
@@ -79,6 +104,135 @@ export default function Toolbar() {
     persistLocale(locale)
   }
 
+  const confirmDelete = () => {
+    Modal.confirm({
+      title: t('messages.confirmDelete'),
+      okType: 'danger',
+      onOk: () => {
+        removeSelected()
+      },
+    })
+  }
+
+  const confirmReset = () => {
+    Modal.confirm({
+      title: t('messages.confirmReset'),
+      onOk: () => {
+        simulationRuntime.reset(document, revision)
+      },
+    })
+  }
+
+  const enterReplayMode = () => {
+    const loaded = replayController.loadFromSnapshot(snapshot)
+    if (!loaded) {
+      setError(t('replay.empty', { defaultValue: '暂无回放数据，请先运行仿真生成事件日志。' }))
+      return
+    }
+    setOperatingMode('replay')
+    useUiStore.getState().setActiveModule('replay')
+  }
+
+  const runToEndBatch = async () => {
+    if (!validateOrError() || batchBusy) {
+      return
+    }
+    setBatchBusy(true)
+    try {
+      const result = await workerRunToEnd(document, (progress, message) => {
+        setError(
+          t('batch.progress', {
+            defaultValue: '后台进度 {{percent}}% — {{message}}',
+            percent: String(Math.round(progress * 100)),
+            message,
+          }),
+        )
+      })
+      useSimulationStore.getState().setSnapshot(result)
+      setOperatingMode('simulation')
+      const twin = buildDigitalTwinState({
+        snapshot: result,
+        project: useProjectStore.getState().document,
+        operatingMode: 'simulation',
+        revision: Date.now(),
+      })
+      useDigitalTwinStore.getState().setTwin(twin)
+      setError(undefined)
+    } catch (error) {
+      setError(mapWorkerError(error, t))
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  const compareAgvsBatch = async () => {
+    if (!validateOrError() || batchBusy) {
+      return
+    }
+    setBatchBusy(true)
+    try {
+      const rows = await workerCompareAgvs([3, 4, 5, 6], 100, (progress, message) => {
+        setError(
+          t('batch.progress', {
+            defaultValue: '后台进度 {{percent}}% — {{message}}',
+            percent: String(Math.round(progress * 100)),
+            message,
+          }),
+        )
+      })
+      setComparison(rows)
+      setError(undefined)
+    } catch (error) {
+      setError(mapWorkerError(error, t))
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  const runExperimentBatch = async () => {
+    if (!validateOrError() || batchBusy) {
+      return
+    }
+    setBatchBusy(true)
+    try {
+      const { results, summaries } = await workerRunExperiment(
+        document,
+        [3, 4, 5, 6],
+        1,
+        document.simulationConfig.seed,
+        (progress, message) => {
+          setError(
+            t('batch.progress', {
+              defaultValue: '后台进度 {{percent}}% — {{message}}',
+              percent: String(Math.round(progress * 100)),
+              message,
+            }),
+          )
+        },
+      )
+      const deltas = experimentManager.compareSummaries(summaries)
+      setExperiment(results, summaries, deltas)
+      setComparison(
+        summaries.map((summary) => ({
+          agvCount: summary.agvCount,
+          throughput: summary.throughput.mean,
+          utilization: summary.agvUtilization.mean,
+          averageWaitingTime: summary.averageWaitingTime.mean,
+          averageCycleTime: summary.averageCycleTime.mean,
+          completedTasks: Math.round(summary.completedTasks.mean),
+          simulationTime: summary.results[0]?.simulationTime ?? 0,
+          emptyTravelRatio: summary.emptyTravelRatio.mean,
+          routeWaitingTime: summary.routeWaitingTime.mean,
+        })),
+      )
+      setError(undefined)
+    } catch (error) {
+      setError(mapWorkerError(error, t))
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
   return (
     <header className="toolbar">
       <div className="toolbar-brand">
@@ -90,14 +244,20 @@ export default function Toolbar() {
           size="small"
           className="project-name-input"
           value={document.project.name}
+          disabled={!modelEditable}
           onChange={(event) => useProjectStore.getState().setProjectName(event.target.value)}
         />
       </div>
       <Space size={4} wrap className="toolbar-actions">
+        {/* project */}
         <Dropdown
+          disabled={!modelEditable}
           menu={{
             items: scenarioItems,
             onClick: ({ key }) => {
+              if (!isModelEditable()) {
+                return
+              }
               if (key === 'conveyor') setDocument(conveyorScenario())
               if (key === 'agv') setDocument(agvScenario(3, 100))
               if (key === 'asrs') setDocument(asrsScenario())
@@ -110,45 +270,10 @@ export default function Toolbar() {
             },
           }}
         >
-          <Button size="small">{t('toolbar.new')}</Button>
+          <Button size="small" disabled={!modelEditable}>
+            {t('toolbar.new')}
+          </Button>
         </Dropdown>
-        <span className="toolbar-sep" />
-        <Button size="small" type={viewMode === '2d' ? 'primary' : 'default'} onClick={() => setViewMode('2d')}>
-          {t('toolbar.view2d')}
-        </Button>
-        <Button size="small" type={viewMode === '3d' ? 'primary' : 'default'} onClick={() => setViewMode('3d')}>
-          {t('toolbar.view3d')}
-        </Button>
-        <Button size="small" type={viewMode === 'split' ? 'primary' : 'default'} onClick={() => setViewMode('split')}>
-          {t('toolbar.viewSplit')}
-        </Button>
-        <span className="toolbar-sep" />
-        <Button
-          size="small"
-          type={operatingMode === 'simulation' ? 'primary' : 'default'}
-          onClick={() => setOperatingMode('simulation')}
-        >
-          {t('toolbar.modeSimulation')}
-        </Button>
-        <Button
-          size="small"
-          type={operatingMode === 'emulation' ? 'primary' : 'default'}
-          onClick={() => setOperatingMode('emulation')}
-        >
-          {t('toolbar.modeEmulation')}
-        </Button>
-        <Button
-          size="small"
-          type={operatingMode === 'replay' ? 'primary' : 'default'}
-          onClick={() => {
-            setOperatingMode('replay')
-            replayEngine.load(snapshot.eventLog)
-            replayEngine.play(5)
-          }}
-        >
-          {t('toolbar.modeReplay')}
-        </Button>
-        <span className="toolbar-sep" />
         <Button
           size="small"
           onClick={() => {
@@ -159,6 +284,7 @@ export default function Toolbar() {
         </Button>
         <Button
           size="small"
+          disabled={!modelEditable}
           onClick={() => {
             const loaded = loadProject()
             if (loaded) {
@@ -176,6 +302,7 @@ export default function Toolbar() {
         </Button>
         <Button
           size="small"
+          disabled={!modelEditable}
           onClick={() => {
             const input = window.document.createElement('input')
             input.type = 'file'
@@ -204,19 +331,60 @@ export default function Toolbar() {
         >
           {t('toolbar.import')}
         </Button>
-        <Button size="small" onClick={undo}>
+
+        <span className="toolbar-sep" />
+        {/* view */}
+        <Button size="small" type={viewMode === '2d' ? 'primary' : 'default'} onClick={() => setViewMode('2d')}>
+          {t('toolbar.view2d')}
+        </Button>
+        <Button size="small" type={viewMode === '3d' ? 'primary' : 'default'} onClick={() => setViewMode('3d')}>
+          {t('toolbar.view3d')}
+        </Button>
+        <Button size="small" type={viewMode === 'split' ? 'primary' : 'default'} onClick={() => setViewMode('split')}>
+          {t('toolbar.viewSplit')}
+        </Button>
+
+        <span className="toolbar-sep" />
+        {/* mode */}
+        <Button
+          size="small"
+          type={operatingMode === 'simulation' ? 'primary' : 'default'}
+          onClick={() => setOperatingMode('simulation')}
+        >
+          {t('toolbar.modeSimulation')}
+        </Button>
+        <Button
+          size="small"
+          type={operatingMode === 'emulation' ? 'primary' : 'default'}
+          onClick={() => setOperatingMode('emulation')}
+        >
+          {t('toolbar.modeEmulation')}
+        </Button>
+        <Button
+          size="small"
+          type={operatingMode === 'replay' ? 'primary' : 'default'}
+          onClick={enterReplayMode}
+        >
+          {t('toolbar.modeReplay')}
+        </Button>
+
+        <span className="toolbar-sep" />
+        {/* edit */}
+        <Button size="small" disabled={!modelEditable} onClick={undo}>
           {t('toolbar.undo')}
         </Button>
-        <Button size="small" onClick={redo}>
+        <Button size="small" disabled={!modelEditable} onClick={redo}>
           {t('toolbar.redo')}
         </Button>
-        <Button size="small" onClick={duplicateSelected}>
+        <Button size="small" disabled={!modelEditable} onClick={duplicateSelected}>
           {t('toolbar.duplicate')}
         </Button>
-        <Button size="small" danger onClick={removeSelected}>
+        <Button size="small" danger disabled={!modelEditable} onClick={confirmDelete}>
           {t('toolbar.delete')}
         </Button>
+
         <span className="toolbar-sep" />
+        {/* sim */}
         <Button
           size="small"
           type="primary"
@@ -232,7 +400,7 @@ export default function Toolbar() {
         <Button size="small" onClick={() => simulationRuntime.pause()}>
           {t('toolbar.pause')}
         </Button>
-        <Button size="small" onClick={() => simulationRuntime.reset(document, revision)}>
+        <Button size="small" onClick={confirmReset}>
           {t('toolbar.reset')}
         </Button>
         <Button size="small" onClick={() => simulationRuntime.step(document, revision)}>
@@ -254,52 +422,21 @@ export default function Toolbar() {
             </Button>
           ))}
         </span>
-        <Button
-          size="small"
-          onClick={() => {
-            if (!validateOrError()) {
-              return
-            }
-            simulationRuntime.runToEnd(document, revision)
-          }}
-        >
+
+        <span className="toolbar-sep" />
+        {/* experiment */}
+        <Button size="small" loading={batchBusy} disabled={batchBusy} onClick={() => void runToEndBatch()}>
           {t('toolbar.runToEnd')}
         </Button>
-        <Button
-          size="small"
-          onClick={() => {
-            if (!validateOrError()) {
-              return
-            }
-            setComparison(compareAgvCounts([3, 4, 5, 6], 100))
-          }}
-        >
+        <Button size="small" loading={batchBusy} disabled={batchBusy} onClick={() => void compareAgvsBatch()}>
           {t('toolbar.compareAgvs')}
         </Button>
         <Button
           size="small"
           type="primary"
-          onClick={() => {
-            if (!validateOrError()) {
-              return
-            }
-            const { results, summaries } = runAgvExperiment(document, [3, 4, 5, 6], 1, document.simulationConfig.seed)
-            const deltas = experimentManager.compareSummaries(summaries)
-            setExperiment(results, summaries, deltas)
-            setComparison(
-              summaries.map((summary) => ({
-                agvCount: summary.agvCount,
-                throughput: summary.throughput.mean,
-                utilization: summary.agvUtilization.mean,
-                averageWaitingTime: summary.averageWaitingTime.mean,
-                averageCycleTime: summary.averageCycleTime.mean,
-                completedTasks: Math.round(summary.completedTasks.mean),
-                simulationTime: summary.results[0]?.simulationTime ?? 0,
-                emptyTravelRatio: summary.emptyTravelRatio.mean,
-                routeWaitingTime: summary.routeWaitingTime.mean,
-              })),
-            )
-          }}
+          loading={batchBusy}
+          disabled={batchBusy}
+          onClick={() => void runExperimentBatch()}
         >
           {t('toolbar.runExperiment')}
         </Button>

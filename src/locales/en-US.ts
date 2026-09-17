@@ -383,6 +383,14 @@ const enUS = {
     connectionFailed: 'Connection failed. Check host and protocol settings.',
     taskCreated: 'Task created.',
     commandRejected: 'Device state does not allow this command.',
+    workerBusy: 'Background worker is busy. Try again shortly.',
+    workerTimeout: 'Background worker timed out. Reduce experiment size and retry.',
+    maxEvents: 'Event count exceeded the limit. Shorten the run or lower generation rate.',
+    modelLocked: 'Model is locked while simulation is running. Stop or reset to edit.',
+  },
+  batch: {
+    progress: 'Background progress {{percent}}% — {{message}}',
+    cancel: 'Cancel background task',
   },
   empty: {
     data: 'No data',

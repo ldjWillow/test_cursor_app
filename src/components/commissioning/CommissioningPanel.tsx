@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useDigitalTwinStore } from '../../store/digitalTwinStore.ts'
 import { deviceRegistry } from '../../virtual/DeviceRegistry.ts'
 import { faultManager } from '../../virtual/FaultManager.ts'
-import { signalMapper } from '../../signal/SignalMapper.ts'
+import { refreshCommissioning, useCommissioningStore } from '../../store/commissioningStore.ts'
 import { useProjectStore } from '../../store/projectStore.ts'
 import { useSimulationStore } from '../../store/simulationStore.ts'
 import { nextId } from '../../utils/id.ts'
@@ -17,6 +17,8 @@ import {
 } from '../../i18n/statusLabels.ts'
 import { formatLatencyMs } from '../../utils/formatters.ts'
 
+type ActionKey = 'assign' | 'fault' | 'startConveyor' | 'stopConveyor'
+
 export default function CommissioningPanel() {
   const { t } = useTranslation()
   const operatingMode = useDigitalTwinStore((state) => state.operatingMode)
@@ -24,8 +26,17 @@ export default function CommissioningPanel() {
   const twin = useDigitalTwinStore((state) => state.twin)
   const document = useProjectStore((state) => state.document)
   const [selectedAgv, setSelectedAgv] = useState<string>()
-  const [busy, setBusy] = useState(false)
+  const [actionBusy, setActionBusy] = useState<ActionKey | null>(null)
   const snapshot = useSimulationStore((state) => state.snapshot)
+
+  const devices = useCommissioningStore((state) => state.devices)
+  const commands = useCommissioningStore((state) => state.commands)
+  const faults = useCommissioningStore((state) => state.faults)
+  const signals = useCommissioningStore((state) => state.signals)
+  const pendingCommandIds = useCommissioningStore((state) => state.pendingCommandIds)
+  const markCommandPending = useCommissioningStore((state) => state.markCommandPending)
+  const clearPending = useCommissioningStore((state) => state.clearPending)
+  const revision = useCommissioningStore((state) => state.revision)
 
   const agvOptions = useMemo(
     () =>
@@ -35,13 +46,18 @@ export default function CommissioningPanel() {
     [document.devices],
   )
 
-  const deviceRows = deviceRegistry.list()
-  const commands = deviceRegistry.commandLog.slice(-30).reverse()
-  const signals = signalMapper.watchTable()
-  const faults = faultManager.listActive()
+  const runAction = async (key: ActionKey, action: () => Promise<void> | void) => {
+    setActionBusy(key)
+    try {
+      await action()
+    } finally {
+      refreshCommissioning()
+      setActionBusy(null)
+    }
+  }
 
   return (
-    <div className="commissioning-panel">
+    <div className="commissioning-panel" data-revision={revision}>
       <div className="panel-title">{t('commissioning.title')}</div>
       <div className="task-config" style={{ marginBottom: 8 }}>
         <Select
@@ -59,7 +75,7 @@ export default function CommissioningPanel() {
           {operatingModeLabel(operatingMode, t)}
         </Tag>
         <Tag>{simulationStatusLabel(twin.status, t)}</Tag>
-        <span className="panel-hint">{t('commissioning.devicesOnline', { count: deviceRows.length })}</span>
+        <span className="panel-hint">{t('commissioning.devicesOnline', { count: devices.length })}</span>
       </div>
 
       <div className="vc-grid">
@@ -69,7 +85,7 @@ export default function CommissioningPanel() {
             size="small"
             pagination={false}
             rowKey="deviceId"
-            dataSource={deviceRows}
+            dataSource={devices}
             locale={{ emptyText: t('empty.data') }}
             columns={[
               { title: t('commissioning.deviceTable.device'), dataIndex: 'deviceId' },
@@ -116,28 +132,32 @@ export default function CommissioningPanel() {
             <Button
               size="small"
               type="primary"
-              loading={busy}
-              disabled={!selectedAgv || operatingMode === 'replay'}
-              onClick={async () => {
+              loading={actionBusy === 'assign'}
+              disabled={!selectedAgv || operatingMode === 'replay' || actionBusy !== null}
+              onClick={() => {
                 if (!selectedAgv) {
                   return
                 }
-                setBusy(true)
-                try {
-                  const sourceId = document.simulationConfig.taskSourceId ?? 'in-1'
-                  const targetId = document.simulationConfig.taskTargetId ?? 'out-1'
-                  await deviceRegistry.sendCommand({
-                    deviceId: selectedAgv,
-                    commandType: 'ASSIGN_TASK',
-                    parameters: {
-                      taskId: nextId('wcs-task'),
-                      sourceId,
-                      targetId,
-                    },
-                  })
-                } finally {
-                  setBusy(false)
-                }
+                void runAction('assign', async () => {
+                  const commandId = nextId('wcs-cmd')
+                  markCommandPending(commandId)
+                  try {
+                    const sourceId = document.simulationConfig.taskSourceId ?? 'in-1'
+                    const targetId = document.simulationConfig.taskTargetId ?? 'out-1'
+                    await deviceRegistry.sendCommand({
+                      commandId,
+                      deviceId: selectedAgv,
+                      commandType: 'ASSIGN_TASK',
+                      parameters: {
+                        taskId: nextId('wcs-task'),
+                        sourceId,
+                        targetId,
+                      },
+                    })
+                  } finally {
+                    clearPending(commandId)
+                  }
+                })
               }}
             >
               {t('commissioning.assignTask')}
@@ -145,32 +165,46 @@ export default function CommissioningPanel() {
             <Button
               size="small"
               danger
-              disabled={!selectedAgv}
+              loading={actionBusy === 'fault'}
+              disabled={!selectedAgv || actionBusy !== null}
               onClick={() => {
                 if (!selectedAgv) {
                   return
                 }
-                faultManager.injectNow(
-                  selectedAgv,
-                  'FAULT',
-                  t('commissioning.faultInjected', { id: selectedAgv }),
-                )
-                const device = deviceRegistry.get(selectedAgv) as { injectFault?: () => void } | undefined
-                device?.injectFault?.()
+                void runAction('fault', () => {
+                  faultManager.injectNow(
+                    selectedAgv,
+                    'FAULT',
+                    t('commissioning.faultInjected', { id: selectedAgv }),
+                  )
+                  const device = deviceRegistry.get(selectedAgv) as { injectFault?: () => void } | undefined
+                  device?.injectFault?.()
+                })
               }}
             >
               {t('commissioning.injectFault')}
             </Button>
             <Button
               size="small"
-              onClick={async () => {
-                const conveyor = document.devices.find((device) => device.type === 'conveyor')
-                if (!conveyor) {
-                  return
-                }
-                await deviceRegistry.sendCommand({
-                  deviceId: conveyor.id,
-                  commandType: 'START',
+              loading={actionBusy === 'startConveyor'}
+              disabled={actionBusy !== null}
+              onClick={() => {
+                void runAction('startConveyor', async () => {
+                  const conveyor = document.devices.find((device) => device.type === 'conveyor')
+                  if (!conveyor) {
+                    return
+                  }
+                  const commandId = nextId('wcs-cmd')
+                  markCommandPending(commandId)
+                  try {
+                    await deviceRegistry.sendCommand({
+                      commandId,
+                      deviceId: conveyor.id,
+                      commandType: 'START',
+                    })
+                  } finally {
+                    clearPending(commandId)
+                  }
                 })
               }}
             >
@@ -178,14 +212,25 @@ export default function CommissioningPanel() {
             </Button>
             <Button
               size="small"
-              onClick={async () => {
-                const conveyor = document.devices.find((device) => device.type === 'conveyor')
-                if (!conveyor) {
-                  return
-                }
-                await deviceRegistry.sendCommand({
-                  deviceId: conveyor.id,
-                  commandType: 'STOP',
+              loading={actionBusy === 'stopConveyor'}
+              disabled={actionBusy !== null}
+              onClick={() => {
+                void runAction('stopConveyor', async () => {
+                  const conveyor = document.devices.find((device) => device.type === 'conveyor')
+                  if (!conveyor) {
+                    return
+                  }
+                  const commandId = nextId('wcs-cmd')
+                  markCommandPending(commandId)
+                  try {
+                    await deviceRegistry.sendCommand({
+                      commandId,
+                      deviceId: conveyor.id,
+                      commandType: 'STOP',
+                    })
+                  } finally {
+                    clearPending(commandId)
+                  }
                 })
               }}
             >
@@ -209,8 +254,9 @@ export default function CommissioningPanel() {
             size="small"
             pagination={false}
             rowKey="commandId"
-            dataSource={commands}
+            dataSource={commands.slice(0, 30)}
             locale={{ emptyText: t('empty.data') }}
+            rowClassName={(row) => (pendingCommandIds.includes(row.commandId) ? 'pending-command' : '')}
             columns={[
               { title: t('commissioning.commandTable.cmd'), dataIndex: 'commandType', width: 120 },
               { title: t('commissioning.commandTable.device'), dataIndex: 'deviceId', width: 100 },
@@ -218,7 +264,10 @@ export default function CommissioningPanel() {
                 title: t('commissioning.commandTable.status'),
                 dataIndex: 'status',
                 width: 90,
-                render: (value: string) => commandStatusLabel(value, t),
+                render: (value: string, row) =>
+                  pendingCommandIds.includes(row.commandId)
+                    ? t('status.command.pending', { defaultValue: '处理中' })
+                    : commandStatusLabel(value, t),
               },
               {
                 title: t('commissioning.commandTable.latency'),

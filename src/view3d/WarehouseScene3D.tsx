@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Group, InstancedMesh } from 'three'
 import { Color, Object3D } from 'three'
@@ -16,6 +16,19 @@ import type {
 import { useProjectStore } from '../store/projectStore.ts'
 
 const dummy = new Object3D()
+
+export type CameraPresetName = 'top' | 'front' | 'side' | 'perspective' | 'fitAll' | 'focus'
+
+export const CAMERA_PRESETS: Record<
+  Exclude<CameraPresetName, 'focus'>,
+  { position: readonly [number, number, number]; target: readonly [number, number, number] }
+> = {
+  top: { position: [25, 40, 20], target: [25, 0, 20] },
+  front: { position: [25, 8, 45], target: [25, 0, 20] },
+  side: { position: [55, 12, 20], target: [25, 0, 20] },
+  perspective: { position: [18, 16, 22], target: [20, 0, 18] },
+  fitAll: { position: [30, 28, 35], target: [20, 0, 18] },
+}
 
 function Floor({ width = 80, depth = 60 }: { width?: number; depth?: number }) {
   return (
@@ -178,14 +191,17 @@ function StationMesh({ state, selected }: { state: StationRuntimeState; selected
   )
 }
 
-function CameraRig() {
-  const controls = useThree((state) => state.controls) as { target?: { set: (x: number, y: number, z: number) => void }; update?: () => void } | null
+function CameraRig({ enabled }: { enabled: boolean }) {
+  const controls = useThree((state) => state.controls) as {
+    target?: { set: (x: number, y: number, z: number) => void }
+    update?: () => void
+  } | null
   const selectedId = useDigitalTwinStore((state) => state.highlightedDeviceId ?? state.twin.selectedDeviceId)
   const twin = useDigitalTwinStore((state) => state.twin)
   const camera = useThree((state) => state.camera)
 
   useEffect(() => {
-    if (!selectedId) {
+    if (!enabled || !selectedId) {
       return
     }
     const device = twin.devices[selectedId]
@@ -196,12 +212,32 @@ function CameraRig() {
     camera.position.set(three.x + 8, 10, three.z + 8)
     controls?.target?.set(three.x, 0.5, three.z)
     controls?.update?.()
-  }, [selectedId, twin.devices, camera, controls])
+  }, [enabled, selectedId, twin.devices, camera, controls])
 
   return null
 }
 
-function SceneContent() {
+function CameraPresetApplier({ preset }: { preset: CameraPresetName }) {
+  const camera = useThree((state) => state.camera)
+  const controls = useThree((state) => state.controls) as {
+    target?: { set: (x: number, y: number, z: number) => void }
+    update?: () => void
+  } | null
+
+  useEffect(() => {
+    if (preset === 'focus') {
+      return
+    }
+    const next = CAMERA_PRESETS[preset]
+    camera.position.set(...next.position)
+    controls?.target?.set(...next.target)
+    controls?.update?.()
+  }, [preset, camera, controls])
+
+  return null
+}
+
+function SceneContent({ cameraPreset }: { cameraPreset: CameraPresetName }) {
   const twin = useDigitalTwinStore((state) => state.twin)
   const selectedId = useDigitalTwinStore((state) => state.highlightedDeviceId ?? state.twin.selectedDeviceId)
   const devices = Object.values(twin.devices) as Array<
@@ -231,20 +267,51 @@ function SceneContent() {
         return <StationMesh key={device.id} state={device} selected={selected} />
       })}
       <OrbitControls makeDefault />
-      <CameraRig />
+      <CameraPresetApplier preset={cameraPreset} />
+      <CameraRig enabled={cameraPreset === 'focus'} />
     </>
   )
 }
 
 export default function WarehouseScene3D() {
   const { t } = useTranslation()
+  const [cameraPreset, setCameraPreset] = useState<CameraPresetName>('perspective')
+  const selectedId = useDigitalTwinStore((state) => state.highlightedDeviceId ?? state.twin.selectedDeviceId)
+
+  const applyPreset = (preset: CameraPresetName) => {
+    setCameraPreset(preset)
+  }
+
+  const clearFocus = () => {
+    useDigitalTwinStore.getState().selectDevice(undefined)
+    setCameraPreset('fitAll')
+  }
+
   return (
     <div className="canvas3d-shell">
-      <Canvas shadows camera={{ position: [18, 16, 22], fov: 45 }}>
-        <SceneContent />
+      <Canvas shadows camera={{ position: [...CAMERA_PRESETS.perspective.position], fov: 45 }}>
+        <SceneContent cameraPreset={cameraPreset} />
       </Canvas>
       <div className="camera-toolbar">
-        <button type="button" onClick={() => useDigitalTwinStore.getState().selectDevice(undefined)}>
+        <button type="button" onClick={() => applyPreset('top')}>
+          {t('view3d.top')}
+        </button>
+        <button type="button" onClick={() => applyPreset('front')}>
+          {t('view3d.front')}
+        </button>
+        <button type="button" onClick={() => applyPreset('side')}>
+          {t('view3d.side')}
+        </button>
+        <button type="button" onClick={() => applyPreset('perspective')}>
+          {t('view3d.perspective')}
+        </button>
+        <button type="button" onClick={() => applyPreset('fitAll')}>
+          {t('view3d.fitAll')}
+        </button>
+        <button type="button" disabled={!selectedId} onClick={() => applyPreset('focus')}>
+          {t('view3d.focus')}
+        </button>
+        <button type="button" onClick={clearFocus}>
           {t('view3d.fitClear')}
         </button>
       </div>
