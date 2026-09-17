@@ -455,6 +455,7 @@ const zhCN = {
     name: '名称',
     protocol: '协议',
     endpoint: '地址',
+    path: '路径',
     status: '状态',
     error: '错误',
     actions: '操作',
@@ -463,6 +464,25 @@ const zhCN = {
     disconnect: '断开',
     autoReconnect: '自动重连',
     manual: '手动',
+    transport: {
+      sameOrigin: '同源',
+      custom: '自定义',
+    },
+    statusLabels: {
+      connected: '已连接',
+      connecting: '连接中',
+      disconnected: '未连接',
+      error: '错误',
+    },
+    errors: {
+      mixedContent: '混合内容被阻止：HTTPS 页面不能连接明文 HTTP/WS 端点',
+      cors: '跨域请求被阻止（CORS），请使用同源网关代理',
+      privateNetwork: '私有网络访问受限：公网页面连接内网地址可能被浏览器拦截',
+      timeout: '连接超时，请确认网关已启动且地址正确',
+      unsupported: '当前浏览器不支持该协议直连，请通过网关桥接',
+      invalid: '连接地址无效，请检查主机、端口或路径',
+      generic: '连接失败，请稍后重试',
+    },
   },
   protocol: {
     filter: '过滤协议日志',

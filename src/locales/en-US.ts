@@ -455,6 +455,7 @@ const enUS = {
     name: 'Name',
     protocol: 'Protocol',
     endpoint: 'Endpoint',
+    path: 'Path',
     status: 'Status',
     error: 'Error',
     actions: 'Actions',
@@ -463,6 +464,25 @@ const enUS = {
     disconnect: 'Disconnect',
     autoReconnect: 'Auto reconnect',
     manual: 'Manual',
+    transport: {
+      sameOrigin: 'Same-origin',
+      custom: 'Custom',
+    },
+    statusLabels: {
+      connected: 'Connected',
+      connecting: 'Connecting',
+      disconnected: 'Disconnected',
+      error: 'Error',
+    },
+    errors: {
+      mixedContent: 'Mixed content blocked: HTTPS pages cannot use cleartext HTTP/WS endpoints',
+      cors: 'Cross-origin request blocked (CORS); use the same-origin gateway proxy',
+      privateNetwork: 'Private network access may be blocked from a public HTTPS page',
+      timeout: 'Connection timed out; confirm the gateway is running and the address is correct',
+      unsupported: 'This protocol cannot be opened directly in the browser; use a gateway bridge',
+      invalid: 'Invalid endpoint; check host, port, or path',
+      generic: 'Connection failed; please try again',
+    },
   },
   protocol: {
     filter: 'Filter protocol log',

@@ -1,18 +1,12 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import type { CSSProperties } from 'react'
 import Toolbar from '../components/toolbar/Toolbar.tsx'
 import ModuleNav from '../components/nav/ModuleNav.tsx'
 import DeviceLibrary from '../components/device-library/DeviceLibrary.tsx'
 import PropertyPanel from '../components/property-panel/PropertyPanel.tsx'
 import SimulationPanel from '../components/simulation-panel/SimulationPanel.tsx'
-import CommissioningPanel from '../components/commissioning/CommissioningPanel.tsx'
-import ConnectionsPanel from '../components/connections/ConnectionsPanel.tsx'
-import ProtocolMonitorPanel from '../components/protocol/ProtocolMonitorPanel.tsx'
 import SignalsPanel from '../components/signals/SignalsPanel.tsx'
-import ReplayPanel from '../components/replay/ReplayPanel.tsx'
-import OverviewPanel from '../components/overview/OverviewPanel.tsx'
 import WarehouseCanvas from '../canvas/WarehouseCanvas.tsx'
-import WarehouseScene3D from '../view3d/WarehouseScene3D.tsx'
 import { useProjectStore } from '../store/projectStore.ts'
 import { useDigitalTwinStore } from '../store/digitalTwinStore.ts'
 import { useUiStore } from '../store/uiStore.ts'
@@ -22,6 +16,13 @@ import { deviceRegistry } from '../virtual/DeviceRegistry.ts'
 import { signalMapper, defaultSignalMappings } from '../signal/SignalMapper.ts'
 import { refreshCommissioning } from '../store/commissioningStore.ts'
 import { replayController } from '../replay/ReplayController.ts'
+
+const WarehouseScene3D = lazy(() => import('../view3d/WarehouseScene3D.tsx'))
+const ConnectionsPanel = lazy(() => import('../components/connections/ConnectionsPanel.tsx'))
+const ProtocolMonitorPanel = lazy(() => import('../components/protocol/ProtocolMonitorPanel.tsx'))
+const ReplayPanel = lazy(() => import('../components/replay/ReplayPanel.tsx'))
+const OverviewPanel = lazy(() => import('../components/overview/OverviewPanel.tsx'))
+const CommissioningPanel = lazy(() => import('../components/commissioning/CommissioningPanel.tsx'))
 
 const CENTER_PANEL_MODULES = new Set<AppModule>([
   'overview',
@@ -33,20 +34,44 @@ const CENTER_PANEL_MODULES = new Set<AppModule>([
   'experiment',
 ])
 
+function ModuleLoading() {
+  return <div className="panel-hint">模块加载中…</div>
+}
+
 function ModulePanel({ module }: { module: AppModule }) {
   switch (module) {
     case 'overview':
-      return <OverviewPanel />
+      return (
+        <Suspense fallback={<ModuleLoading />}>
+          <OverviewPanel />
+        </Suspense>
+      )
     case 'connections':
-      return <ConnectionsPanel />
+      return (
+        <Suspense fallback={<ModuleLoading />}>
+          <ConnectionsPanel />
+        </Suspense>
+      )
     case 'signals':
       return <SignalsPanel />
     case 'protocol':
-      return <ProtocolMonitorPanel />
+      return (
+        <Suspense fallback={<ModuleLoading />}>
+          <ProtocolMonitorPanel />
+        </Suspense>
+      )
     case 'replay':
-      return <ReplayPanel />
+      return (
+        <Suspense fallback={<ModuleLoading />}>
+          <ReplayPanel />
+        </Suspense>
+      )
     case 'commissioning':
-      return <CommissioningPanel />
+      return (
+        <Suspense fallback={<ModuleLoading />}>
+          <CommissioningPanel />
+        </Suspense>
+      )
     case 'eventLog':
     case 'experiment':
     case 'simulation':
@@ -87,6 +112,7 @@ export default function WarehouseSimApp() {
   const showCenterPanel = CENTER_PANEL_MODULES.has(activeModule)
   const bottomModule: AppModule =
     activeModule === 'model' || activeModule === 'twin3d' ? 'simulation' : activeModule
+  const showScene3D = viewMode === '3d' || viewMode === 'split'
 
   return (
     <div
@@ -116,9 +142,11 @@ export default function WarehouseSimApp() {
                 <WarehouseCanvas />
               </div>
             )}
-            {(viewMode === '3d' || viewMode === 'split') && (
+            {showScene3D && (
               <div className="viewport-3d">
-                <WarehouseScene3D />
+                <Suspense fallback={<ModuleLoading />}>
+                  <WarehouseScene3D />
+                </Suspense>
               </div>
             )}
           </>
