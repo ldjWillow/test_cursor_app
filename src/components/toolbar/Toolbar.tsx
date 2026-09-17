@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Dropdown, Input, Modal, Select, Space, Tooltip, Typography } from 'antd'
+import { Button, Dropdown, Input, Select, Space, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { SimulationSpeed, SimulationStatus } from '../../types/index.ts'
@@ -105,22 +105,15 @@ export default function Toolbar() {
   }
 
   const confirmDelete = () => {
-    Modal.confirm({
-      title: t('messages.confirmDelete'),
-      okType: 'danger',
-      onOk: () => {
-        removeSelected()
-      },
-    })
+    if (window.confirm(t('messages.confirmDelete'))) {
+      removeSelected()
+    }
   }
 
   const confirmReset = () => {
-    Modal.confirm({
-      title: t('messages.confirmReset'),
-      onOk: () => {
-        simulationRuntime.reset(document, revision)
-      },
-    })
+    if (window.confirm(t('messages.confirmReset'))) {
+      simulationRuntime.reset(document, revision)
+    }
   }
 
   const enterReplayMode = () => {

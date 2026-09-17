@@ -60,11 +60,17 @@ export class SimulationRuntime {
     this.running = false
     this.stopLoop()
     this.load(project, revision, true)
+    useSimulationStore.getState().setStatus(SimulationStatus.Idle)
   }
 
   step(project: ProjectDocument, revision: number): void {
+    this.running = false
+    this.stopLoop()
     const engine = this.load(project, revision)
     engine.step()
+    if (engine.status === SimulationStatus.Running) {
+      engine.pause()
+    }
     this.publish()
   }
 
